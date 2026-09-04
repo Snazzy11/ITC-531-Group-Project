@@ -1,8 +1,6 @@
 FROM python:3.12.11-slim-bookworm
 
-# Write logs immediately so they appear in docker compose logs.
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
