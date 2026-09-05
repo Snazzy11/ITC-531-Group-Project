@@ -1,0 +1,9 @@
+.git
+.trunk
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+**/*.env
+**/*.db
+.pytest_cache
