@@ -38,6 +38,10 @@ For week 1: These are the role assignments
 3. Teardown:
 ```docker compose down --volumes```
 
+## Test working
+Query the health check endpoint
+`curl "http://localhost:8000/health"`
+
 # Contributing Code
 
 ## Pre-requisites
