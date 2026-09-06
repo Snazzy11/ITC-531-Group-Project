@@ -6,6 +6,7 @@
   - Make sure you run uv init and uv sync upon pulling the repo
 - Refer to the requirements.txt and pyproject.toml for requirements
   - As of now these are able to fall out of sync. Will add github actions to ensure sync in the future
+- Our Python version is 3.14
 
 # Developers
 
