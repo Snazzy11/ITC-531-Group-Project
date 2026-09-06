@@ -54,6 +54,7 @@ Query the health check endpoint
 
 1. Create a branch from main
    1. This lets you make any changes you want, without possibility of destroying main
+   2. Refer to branch prefixes below. ALWAYS prefix your branch name
 2. Make some changes, and commit them
    1. You should make incremental commits, so you have places to go back to if you change code
 3. Feel free to push your branch at any time, but we suggest only making a pull request when it is ready or near ready.
@@ -61,7 +62,16 @@ Query the health check endpoint
 4. Merging a pull request will always require approval from at least 1 reviewer
 5. Once approved, merge the branch
 
-## Decisions
+### Branch Prefixes
+Whenever you make a branch, use a prefix to indicate what it is for.
+`feature/` for new features
+`fix` for bugs and fixes
+`docs` for when you make only documentation changes
+`refactor` for when the branch is exclusively refactoring old code
+`test` for adding new tests
+`chore` for cleanup, simple config changes, etc.
+
+# Decisions
 The concept we will pursue is a lost and found system for the campus community. Users will be able to upload images of items they find around campus as well as the locations they found them out and/or descriptions of lost items and last seen locations.
 
 We decided not to pursue features that could benefit this application such as: such as AI image recognition to identify items, a live messaging system between users, or a mobile application. While all these features would make for a better user experience and would contribute greatly to the app's usability, they remain out of scope for the purposes of this project. 
