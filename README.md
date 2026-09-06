@@ -4,6 +4,8 @@
 
 - Python package management will be done with uv
   - Make sure you run uv init and uv sync upon pulling the repo
+- Refer to the requirements.txt and pyproject.toml for requirements
+  - As of now these are able to fall out of sync. Will add github actions to ensure sync in the future
 
 # Developers
 
@@ -49,10 +51,10 @@ For week 1: These are the role assignments
    1. This lets you make any changes you want, without possibility of destroying main
 2. Make some changes, and commit them
    1. You should make incremental commits, so you have places to go back to if you change code
-3. Feel free to push your branch at any time, but only make a pull request when it is read
-4. Once your feature is complete, create a pull request on GitHub
-5. This will require approval from at least 1 reviewer
-6. Once approved, merge the branch
+3. Feel free to push your branch at any time, but we suggest only making a pull request when it is ready or near ready.
+   1. If additional changes need to be made, please mark your pull request as a DRAFT until finished.
+4. Merging a pull request will always require approval from at least 1 reviewer
+5. Once approved, merge the branch
 
 ## Decisions
 The concept we will pursue is a lost and found system for the campus community. Users will be able to upload images of items they find around campus as well as the locations they found them out and/or descriptions of lost items and last seen locations.
