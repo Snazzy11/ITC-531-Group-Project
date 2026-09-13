@@ -108,9 +108,70 @@ Note: Staff has access to all endpoints listed. When staff is stated explicitly 
 - Response: 204 No content
 - Error(s): None, return 204 if not found
 
+# Part 3
+## Pydantic Schema ("Data Models")
+```python
+from datetime import datetime
+from typing import Literal
+from pydantic import BaseModel, ConfigDict, Field
+
+class RequestModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+class ItemCreate(RequestModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(min_length=1, max_length=2000)
+    type: Literal[0, 1]  # 0 = lost, 1 = found
+    location_id: int = Field(gt=0)
+
+class ItemUpdate(RequestModel):
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, min_length=1, max_length=2000)
+    location_id: int | None = Field(None, gt=0)
+
+class ItemOut(ItemCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+
+    id: int = Field(gt=0)
+    status: Literal["open", "matched", "returned", "withdrawn", "expired"]
+    created_at: datetime
+
+class MatchCreate(RequestModel):
+    lost_item_id: int = Field(gt=0)
+    found_item_id: int = Field(gt=0)
+
+class MatchUpdate(RequestModel):
+    lost_item_id: int | None = Field(None, gt=0)
+    found_item_id: int | None = Field(None, gt=0)
+
+class MatchOut(MatchCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+
+    id: int = Field(gt=0)
+    created_at: datetime
+
+class LocationCreate(RequestModel):
+    name: str = Field(min_length=1, max_length=100)
+    coordinates: str = Field(min_length=3, max_length=50)
+    description: str = Field(default="", max_length=1000)
+
+class LocationUpdate(RequestModel):
+    name: str | None = Field(None, min_length=1, max_length=100)
+    coordinates: str | None = Field(None, min_length=3, max_length=50)
+    description: str | None = Field(None, max_length=1000)
+
+class LocationOut(LocationCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+
+    id: int = Field(gt=0)
+```
+
 
 # Part 4
-## Database / resource description
+## Resource Description
 * Item  
   * Item is what the whole application is designed around. It is either something someone lost and posted, or something someone found and posted  
     * If somebody lost something, there doesn't need to be a full "found" post as well, and vice versa. That could be the case, but more likely someone files a "claim" which automatically generates a new item entry, and then a match  
@@ -156,5 +217,135 @@ Note: Staff has access to all endpoints listed. When staff is stated explicitly 
       * Restrict deletions when the items exist. Locations will rarely just 'disappear', and we don't want to delete orphan items just because of the location not existing.  
       * Buildings *can* get renamed or closed, so we can retire a location by setting is\_active to false. Old posts can keep using it, but new posts cant
 
-## Database models
-Models can be found in code in models.py
+## Data Models
+```python
+import enum
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    true,
+)
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+from database import Base
+
+# ENUMS # TODO: Move to more relevant file later
+class ItemType(enum.IntEnum):
+    LOST = 0
+    FOUND = 1
+
+class ItemStatus(str, enum.Enum):
+    OPEN = "open"
+    MATCHED = "matched"
+    RETURNED = "returned"
+    WITHDRAWN = "withdrawn"
+    EXPIRED = "expired"
+
+
+class Location(Base):
+    __tablename__ = "locations"
+
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, unique=True)
+    coordinates = Column(String(50), nullable=False)
+    description = Column(String(500))
+    is_active = Column(Boolean, nullable=False, server_default=true())
+
+
+    items = relationship("Item", back_populates="location", passive_deletes="all")
+
+class Item(Base):
+    __tablename__ = "items"
+    __table_args__ = (
+        CheckConstraint("type IN (0, 1)", name="ck_items_type"),
+    )
+
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(String(1000))
+    type = Column(Integer, nullable=False, index=True)
+    status = Column(
+        Enum(
+            ItemStatus,
+            name="item_status",
+            native_enum=False,
+            length=20,
+            validate_strings=True,
+            values_callable=lambda status: [member.value for member in status],
+        ),
+        nullable=False,
+        default=ItemStatus.OPEN,
+        server_default=ItemStatus.OPEN.value,
+        index=True,
+    )
+    location_id = Column(
+        Integer,
+        ForeignKey("locations.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    # user_id = Column(Integer) # would be a foreign key later on
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+    location = relationship("Location", back_populates="items")
+    lost_matches = relationship(
+        "Match",
+        foreign_keys="Match.lost_item_id",
+        back_populates="lost_item",
+        passive_deletes="all",
+    )
+    found_matches = relationship(
+        "Match",
+        foreign_keys="Match.found_item_id",
+        back_populates="found_item",
+        passive_deletes="all",
+    )
+
+
+    @property
+    def matches(self):
+        return self.lost_matches + self.found_matches
+
+class Match(Base):
+    __tablename__ = "matches"
+    __table_args__ = (
+        UniqueConstraint("lost_item_id", "found_item_id", name="uq_matches_item_pair"),
+        CheckConstraint("lost_item_id <> found_item_id", name="ck_matches_distinct_items"),
+    )
+
+
+    id = Column(Integer, primary_key=True, index=True)
+    lost_item_id = Column(
+        Integer,
+        ForeignKey("items.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    found_item_id = Column(
+        Integer,
+        ForeignKey("items.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+    lost_item = relationship(
+        "Item", foreign_keys=[lost_item_id], back_populates="lost_matches"
+    )
+    found_item = relationship(
+        "Item", foreign_keys=[found_item_id], back_populates="found_matches"
+    )
+```
