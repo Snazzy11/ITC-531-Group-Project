@@ -349,3 +349,35 @@ class Match(Base):
         "Item", foreign_keys=[found_item_id], back_populates="found_matches"
     )
 ```
+
+# Part 5
+## Error Contract
+We will map all errors to this Json format:
+
+{
+  "error": {
+    "code": "ITEM_NOT_FOUND",
+    "detail": "The requested item could not be found."
+  }
+}
+error: Holds all the information about the error.
+code: Our error identifier, such as ITEM_NOT_FOUND or VALIDATION_ERROR. The frontend can use it to decide what to show or do.
+detail: A readable message for ordinary errors, or a list of problems for validation errors.
+We will use a shared exception handler for FastAPI’s 422 errors
+
+
+200 OK: An item, match, or location was retrieved or updated
+201 Created: An item, match, or location was created.
+204 No Content: An item was withdrawn, a match was deleted, or a location was retired.
+401 Unauthorized: Someone did not sign in.
+403 Forbidden: A signed-in user tries to do an admin action.
+404 Not Found: The requested item, match, or location does not exist.
+422 Unprocessable Entity: The request contains invalid data, such as an empty name or item type
+500 Internal Server Error: An unexpected error and the request fails.
+503 Service Unavailable: The database cannot be reached.
+
+If the database is unreachable, we return 503. Unexpected application errors return 500
+
+LocationOut leaves out is_active because it is only used internally to decide whether a location can be selected for new posts. Older posts can still show that location after it is retired.
+
+Error messages should explain what went wrong without exposing debugging output, database queries, internal server names, or whether someone’s email is linked to an account.
