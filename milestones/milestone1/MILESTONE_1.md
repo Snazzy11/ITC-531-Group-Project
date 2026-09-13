@@ -8,7 +8,7 @@ When a user loses an item, they will be able to upload relevant information to t
 |----------------|-----------------------------|---------------|
 |Object Storage|Store item photographs.|S3 API|
 |Relational Data|Storing users, items, and matches.|PostgreSQL|
-|Message Broker|Queue photograph processing and lost/found comparisons.|AMQP 0-9-1|
+|Message Broker|Queue photograph processing and lost/found comparisons.|RabbitMQ + AMQP 0-9-1|
 |Metrics|Expose request counts and duration, completed jobs, and processing failures.| Prometheus Exposition|
 
 # Part 2
