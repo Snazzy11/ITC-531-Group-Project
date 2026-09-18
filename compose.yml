@@ -4,8 +4,6 @@ services:
   app:
     build: .
     expose: ["8000"]
-    ports:
-      - "127.0.0.1:${APP_PORT:-8000}:8000"
     healthcheck:
       test:
         - CMD
