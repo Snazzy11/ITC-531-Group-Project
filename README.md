@@ -35,7 +35,8 @@ For week 1: These are the role assignments
 1. Clone the repository:
 ```git clone https://github.com/Snazzy11/ITC-531-Group-Project```
 2. Build and run the container:
-```docker compose -up -d --wait```
+```docker compose -up -d --wait --scale app=3```
+    a. Includes scaled app service
 3. Teardown:
 ```docker compose down --volumes```
 
