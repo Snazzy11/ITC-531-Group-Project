@@ -15,8 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-from database import Base
-
+from database.database import Base
 
 class ItemType(enum.IntEnum):
     LOST = 0
@@ -116,8 +115,8 @@ class Match(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     lost_item = relationship(
-        "Item", foreign_keys=[lost_item_id], back_populates="lost_matches"
+        "Item", foreign_keys="lost_item_id", back_populates="lost_matches"
     )
     found_item = relationship(
-        "Item", foreign_keys=[found_item_id], back_populates="found_matches"
+        "Item", foreign_keys="found_item_id", back_populates="found_matches"
     )
