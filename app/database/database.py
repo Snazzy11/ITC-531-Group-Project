@@ -5,7 +5,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.environ["DATABASE_URL"] # TODO: This must exist in our Dockerfile
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True, echo=True) # Echo adds verbose logging
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True) # Echo adds verbose logging
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, future=True)
 Base = declarative_base()
