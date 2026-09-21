@@ -1,0 +1,101 @@
+03 - Redelivery after a consumer is killed
+
+The test worker pauses for 300 seconds before acknowledging so it can be killed
+while holding a message.
+
+Stop the matching worker:
+$ compose stop matching_worker
+ Container campus-seekr-matching_worker-1 Stopping 
+ Container campus-seekr-matching_worker-1 Stopped 
+
+Before publishing the matching queue is empty:
+$ compose exec -T broker rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	0	0	1
+events.logger	0	0	1
+events.notifier	0	0	1
+jobs.item_matcher	0	0	0
+
+Start a test worker that pauses before acknowledging:
+$ compose run -d --no-deps --name campus-seekr-redelivery-test matching_worker python -u -c 'import time
+from pika.adapters.blocking_connection import BlockingChannel
+from app import matching_worker
+original_ack = BlockingChannel.basic_ack
+def paused_ack(self, *args, **kwargs):
+    print("TEST: paused before acknowledgment; kill this container now", flush=True)
+    time.sleep(300)
+    return original_ack(self, *args, **kwargs)
+BlockingChannel.basic_ack = paused_ack
+matching_worker.main()'
+ Container campus-seekr-redelivery-test Creating 
+ Container campus-seekr-redelivery-test Created 
+ed21911a6186f2ed4deb181db7d3d360a16aa04946d71f1e071ff2ddad37383b
+
+Publish one matching job for item 920301:
+$ compose run --rm --no-deps -T matching_worker python -c 'from app.messaging import publish_matching_job; publish_matching_job(920301)'
+ Container campus-seekr-matching_worker-run-fa52f7d84b90 Creating 
+ Container campus-seekr-matching_worker-run-fa52f7d84b90 Created 
+Published matching job for item 920301
+
+The test worker holds one unacknowledged message:
+$ compose exec -T broker rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	0	0	1
+events.logger	0	0	1
+events.notifier	0	0	1
+jobs.item_matcher	0	1	1
+
+The test worker received item 920301 and paused:
+$ wsl -d rancher-desktop -- docker logs campus-seekr-redelivery-test  (run from Windows)
+TEST: paused before acknowledgment; kill this container now
+INFO Waiting for jobs on jobs.item_matcher
+INFO Received item 920301 matching is not implemented yet
+
+Kill the test worker before it acknowledges:
+$ wsl -d rancher-desktop -- docker kill --signal=KILL campus-seekr-redelivery-test  (run from Windows)
+campus-seekr-redelivery-test
+
+After the kill the message is back on the queue:
+$ compose exec -T broker rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	0	0	1
+events.logger	0	0	1
+events.notifier	0	0	1
+jobs.item_matcher	1	0	0
+
+Start the normal matching worker:
+$ compose start matching_worker
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Healthy 
+ Container campus-seekr-matching_worker-1 Starting 
+ Container campus-seekr-matching_worker-1 Started 
+
+After redelivery the matching queue is empty:
+$ compose exec -T broker rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	0	0	1
+events.logger	0	0	1
+events.notifier	0	0	1
+jobs.item_matcher	0	0	1
+
+The normal worker received the same item 920301:
+$ compose logs --no-color --since 5m matching_worker
+matching_worker-1  | INFO Waiting for jobs on jobs.item_matcher
+matching_worker-1  | INFO Received item 920301 matching is not implemented yet
+
+Remove the test container:
+$ wsl -d rancher-desktop -- docker rm -f campus-seekr-redelivery-test  (run from Windows)
+campus-seekr-redelivery-test
+
+Leave the matching worker running:
+$ compose start matching_worker
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Healthy

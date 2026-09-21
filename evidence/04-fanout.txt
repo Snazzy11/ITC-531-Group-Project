@@ -1,0 +1,53 @@
+04 - One event reaches both subscribers
+
+Publish one match event and check that the logger and notifier receive the same
+event ID. Each subscriber has its own queue. The notifier only logs for now.
+
+Show the topic exchange:
+$ compose exec -T broker rabbitmqctl list_exchanges name type durable
+Listing exchanges for vhost / ...
+name	type	durable
+amq.direct	direct	true
+amq.topic	topic	true
+amq.headers	headers	true
+amq.fanout	fanout	true
+amq.rabbitmq.trace	topic	true
+seekr.events	topic	true
+amq.match	headers	true
+	direct	true
+
+Show the separate subscriber queues and their bindings:
+$ compose exec -T broker rabbitmqctl list_bindings source_name destination_name destination_kind routing_key
+Listing bindings for vhost /...
+source_name	destination_name	destination_kind	routing_key
+	jobs.image_processor	queue	jobs.image_processor
+	events.logger	queue	events.logger
+	events.notifier	queue	events.notifier
+	jobs.item_matcher	queue	jobs.item_matcher
+seekr.events	events.logger	queue	#
+seekr.events	events.notifier	queue	match.confirmed
+seekr.events	events.notifier	queue	match.potential_found
+
+Publish one match event:
+$ compose exec -T matching_worker python -c 'from app.messaging import publish_event; event_id = publish_event("match.potential_found", {"lost_item_id": 920401, "found_item_id": 920402, "score": 0.8}, source="fanout-test"); print("Event ID:", event_id)'
+Published event match.potential_found: 88b1f280-df4e-4a93-8140-410799ee511a
+Event ID: 88b1f280-df4e-4a93-8140-410799ee511a
+
+Show the notifier receiving the event:
+$ compose logs --no-color --since 5m notifier
+notifier-1  | INFO Would notify for match.potential_found: {"event_id": "88b1f280-df4e-4a93-8140-410799ee511a", "schema_version": 1, "timestamp": "2026-09-21T02:02:18.631564Z", "source": "fanout-test", "event_type": "match.potential_found", "payload": {"lost_item_id": 920401, "found_item_id": 920402, "score": 0.8}}
+
+Show the same event in the logger file:
+$ compose exec -T logger python -c 'import json; from pathlib import Path; records = [json.loads(line) for line in Path("/app/logs/events.jsonl").read_text().splitlines()]; matches = [record for record in records if record["event"].get("event_id") == "88b1f280-df4e-4a93-8140-410799ee511a"]; assert len(matches) == 1; print(json.dumps(matches[0]))'
+{"routing_key": "match.potential_found", "event": {"event_id": "88b1f280-df4e-4a93-8140-410799ee511a", "schema_version": 1, "timestamp": "2026-09-21T02:02:18.631564Z", "source": "fanout-test", "event_type": "match.potential_found", "payload": {"lost_item_id": 920401, "found_item_id": 920402, "score": 0.8}}}
+
+Both subscriber queues are empty after acknowledgment:
+$ compose exec -T broker rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	0	0	1
+events.logger	0	0	1
+events.notifier	0	0	1
+jobs.item_matcher	0	0	1
+
