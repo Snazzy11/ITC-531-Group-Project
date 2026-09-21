@@ -20,7 +20,7 @@ services:
 
   matching_worker:
     build: .
-    command: ["python", "-m", "app.matching_worker"]
+    command: ["python", "-m", "matching_worker"]
     environment:
       BROKER_HOST: broker
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
@@ -31,7 +31,7 @@ services:
 
   image_worker:
     build: .
-    command: ["python", "-m", "app.image_worker"]
+    command: ["python", "-m", "image_worker"]
     environment:
       BROKER_HOST: broker
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
@@ -42,7 +42,7 @@ services:
 
   logger:
     build: .
-    command: ["python", "-m", "app.logger"]
+    command: ["python", "-m", "logger"]
     environment:
       BROKER_HOST: broker
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
@@ -54,7 +54,7 @@ services:
 
   notifier:
     build: .
-    command: ["python", "-m", "app.notifier"]
+    command: ["python", "-m", "notifier"]
     environment:
       BROKER_HOST: broker
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
@@ -79,9 +79,9 @@ services:
     volumes: ["brokerdata:/var/lib/rabbitmq"]
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
+      interval: 15s
+      timeout: 15s
+      retries: 10
       start_period: 30s
 
   db:
@@ -97,8 +97,8 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U seekr -d seekr"]
       interval: 5s
-      timeout: 3s
-      retries: 12
+      timeout: 5s
+      retries: 10
       start_period: 10s
 
 volumes:

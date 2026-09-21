@@ -46,7 +46,7 @@ For week 1: These are the role assignments
 ## Testing the Service
 Start the app and check that it responds:
 ```sh
-curl http://localhost:8081/api/v1/health
+curl http://localhost:8000/api/v1/health
 ```
 
 Open http://localhost:15672 to view RabbitMQ. Log in with the values you chose.

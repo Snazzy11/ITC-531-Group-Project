@@ -7,7 +7,7 @@ worker picks them up. The queues and event subscribers are set up, but the API
 is not connected to them yet.
 
 ```text
-Client -> gateway (localhost:8081) -> API (internal port 8000)
+Client -> gateway (localhost:8000) -> API (internal port 8000)
 
 Functions in app/messaging.py
   RabbitMQ default exchange ("")

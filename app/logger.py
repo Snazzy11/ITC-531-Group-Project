@@ -3,7 +3,7 @@ import logging
 import os
 from pathlib import Path
 
-from app.messaging import LOGGER_QUEUE, connect, declare_logger_queue
+from messaging import LOGGER_QUEUE, connect, declare_logger_queue
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logging.getLogger("pika").setLevel(logging.WARNING)

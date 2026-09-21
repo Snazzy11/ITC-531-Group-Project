@@ -1,7 +1,7 @@
 import json
 import logging
 
-from app.messaging import NOTIFIER_QUEUE, connect, declare_notifier_queue
+from messaging import NOTIFIER_QUEUE, connect, declare_notifier_queue
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logging.getLogger("pika").setLevel(logging.WARNING)

@@ -3,7 +3,7 @@ import os
 
 import pika
 
-from app.events import build_event
+from events import build_event
 
 MATCHING_QUEUE = "jobs.item_matcher"
 IMAGE_QUEUE = "jobs.image_processor"

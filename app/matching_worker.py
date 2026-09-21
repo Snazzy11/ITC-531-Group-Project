@@ -1,7 +1,7 @@
 import json
 import logging
 
-from app.messaging import MATCHING_QUEUE, connect
+from messaging import MATCHING_QUEUE, connect
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logging.getLogger("pika").setLevel(logging.WARNING)
