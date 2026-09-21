@@ -1,0 +1,113 @@
+06 - Requests across three API replicas
+
+Send 30 requests through the gateway and use its access log to count requests per replica.
+
+Start three API replicas:
+$ compose up -d --no-build --wait --scale app=3 app
+ Container campus-seekr-app-1 Running 
+ Container campus-seekr-app-2 Running 
+ Container campus-seekr-app-3 Running 
+ Container campus-seekr-db-1 Running 
+ Container campus-seekr-db-1 Waiting 
+ Container campus-seekr-db-1 Healthy 
+ Container campus-seekr-db-1 Waiting 
+ Container campus-seekr-app-2 Waiting 
+ Container campus-seekr-app-3 Waiting 
+ Container campus-seekr-app-1 Waiting 
+ Container campus-seekr-db-1 Healthy 
+ Container campus-seekr-app-2 Healthy 
+ Container campus-seekr-app-3 Healthy 
+ Container campus-seekr-app-1 Healthy 
+
+Restart the gateway so it sees all three replicas:
+$ compose restart gateway
+ Container campus-seekr-gateway-1 Restarting 
+ Container campus-seekr-gateway-1 Started 
+
+Show replica status and ports:
+$ compose ps app gateway
+NAME                     IMAGE                 COMMAND                  SERVICE   CREATED              STATUS                        PORTS
+campus-seekr-app-1       campus-seekr-app      "uvicorn api:app --h…"   app       About a minute ago   Up About a minute (healthy)   8000/tcp
+campus-seekr-app-2       campus-seekr-app      "uvicorn api:app --h…"   app       About a minute ago   Up About a minute (healthy)   8000/tcp
+campus-seekr-app-3       campus-seekr-app      "uvicorn api:app --h…"   app       About a minute ago   Up About a minute (healthy)   8000/tcp
+campus-seekr-gateway-1   nginx:1.27.4-alpine   "/docker-entrypoint.…"   gateway   12 minutes ago       Up 2 seconds                  0.0.0.0:8000->80/tcp, [::]:8000->80/tcp
+
+Map replica names to backend addresses:
+$ wsl -d rancher-desktop -- docker inspect --format "{{.Name}} {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" campus-seekr-app-1 campus-seekr-app-2 campus-seekr-app-3
+/campus-seekr-app-1 172.18.0.11
+/campus-seekr-app-2 172.18.0.8
+/campus-seekr-app-3 172.18.0.10
+
+Send 30 requests (PowerShell):
+$ 1..30 | ForEach-Object { $status = curl.exe -sS --max-time 15 -o NUL -w "%{http_code}" "http://localhost:8000/api/v1/health?evidence=distribution-rerun-920602&request=$_"; "Request $_ : HTTP $status" }
+Request 1 : HTTP 200
+Request 2 : HTTP 200
+Request 3 : HTTP 200
+Request 4 : HTTP 200
+Request 5 : HTTP 200
+Request 6 : HTTP 200
+Request 7 : HTTP 200
+Request 8 : HTTP 200
+Request 9 : HTTP 200
+Request 10 : HTTP 200
+Request 11 : HTTP 200
+Request 12 : HTTP 200
+Request 13 : HTTP 200
+Request 14 : HTTP 200
+Request 15 : HTTP 200
+Request 16 : HTTP 200
+Request 17 : HTTP 200
+Request 18 : HTTP 200
+Request 19 : HTTP 200
+Request 20 : HTTP 200
+Request 21 : HTTP 200
+Request 22 : HTTP 200
+Request 23 : HTTP 200
+Request 24 : HTTP 200
+Request 25 : HTTP 200
+Request 26 : HTTP 200
+Request 27 : HTTP 200
+Request 28 : HTTP 200
+Request 29 : HTTP 200
+Request 30 : HTTP 200
+
+Raw gateway logs for these requests:
+$ compose exec -T gateway grep 'evidence=distribution-rerun-920602&request=' /var/log/nginx/api.access.log
+192.168.143.2 60ae6416b58fbeb95734c50e6b6f9bd5 "GET /api/v1/health?evidence=distribution-rerun-920602&request=1 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.004 urt=0.003
+192.168.143.2 6914eb8fff59f33da4ed832c01957472 "GET /api/v1/health?evidence=distribution-rerun-920602&request=2 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.003
+192.168.143.2 e40fea3650ba57533c4ce222e4638ecb "GET /api/v1/health?evidence=distribution-rerun-920602&request=3 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 216270b1a7471ad29849661c3052edd7 "GET /api/v1/health?evidence=distribution-rerun-920602&request=4 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 3cb25c051471877d1e325188a82e2965 "GET /api/v1/health?evidence=distribution-rerun-920602&request=5 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.002
+192.168.143.2 87096f80d3515cac1cc5743a85070d58 "GET /api/v1/health?evidence=distribution-rerun-920602&request=6 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.003
+192.168.143.2 e364c8f15bece46247742aa37b2a6ca9 "GET /api/v1/health?evidence=distribution-rerun-920602&request=7 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.002
+192.168.143.2 8ae7628a69ad9dd11ce8a5e7a1c8ec36 "GET /api/v1/health?evidence=distribution-rerun-920602&request=8 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.005 urt=0.004
+192.168.143.2 1d2586ad50d11ed94c96acf9f8bcb7a5 "GET /api/v1/health?evidence=distribution-rerun-920602&request=9 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.002
+192.168.143.2 84f867e973fd636fe2d6a06b4201c300 "GET /api/v1/health?evidence=distribution-rerun-920602&request=10 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.003
+192.168.143.2 2d7ef8feb7c9259d9158b9f876590569 "GET /api/v1/health?evidence=distribution-rerun-920602&request=11 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.003
+192.168.143.2 0ddb7ff0f0d0f149b779f993e83519d7 "GET /api/v1/health?evidence=distribution-rerun-920602&request=12 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.002
+192.168.143.2 fc225ad6c99f93f6c41b417ece7487a3 "GET /api/v1/health?evidence=distribution-rerun-920602&request=13 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 525f0eff4a5032688e7353e10bae6dbb "GET /api/v1/health?evidence=distribution-rerun-920602&request=14 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 922e0ab30ba4d17bdccaea60abd65e17 "GET /api/v1/health?evidence=distribution-rerun-920602&request=15 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.002
+192.168.143.2 2c146a3de16abbefef08d2f857385cf8 "GET /api/v1/health?evidence=distribution-rerun-920602&request=16 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.003
+192.168.143.2 9d102ff15f1102d677779a522303bb80 "GET /api/v1/health?evidence=distribution-rerun-920602&request=17 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 2d1ebfe427278396d34bd2c34e614bc4 "GET /api/v1/health?evidence=distribution-rerun-920602&request=18 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.002
+192.168.143.2 6fbaec192365f6d893ffc7de5828a2e1 "GET /api/v1/health?evidence=distribution-rerun-920602&request=19 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.002
+192.168.143.2 a59326117bc69fe3cd958bd878c3a139 "GET /api/v1/health?evidence=distribution-rerun-920602&request=20 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.002
+192.168.143.2 e0a314c0c70d8a2c7accb45182e2f740 "GET /api/v1/health?evidence=distribution-rerun-920602&request=21 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.004 urt=0.003
+192.168.143.2 c38aecbaeec6541c8b7d00852aec8a36 "GET /api/v1/health?evidence=distribution-rerun-920602&request=22 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.003
+192.168.143.2 aac6fe7519c0f692445c22733ddadd1c "GET /api/v1/health?evidence=distribution-rerun-920602&request=23 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.002
+192.168.143.2 2b5ad4790af46aa86a82697c564a700f "GET /api/v1/health?evidence=distribution-rerun-920602&request=24 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.002 urt=0.002
+192.168.143.2 3cb28863bca73955988d5796bb7f882d "GET /api/v1/health?evidence=distribution-rerun-920602&request=25 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.002 urt=0.002
+192.168.143.2 96c80ab8971e820c09894764ffd479ce "GET /api/v1/health?evidence=distribution-rerun-920602&request=26 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 5ab1cfd57f358fd82ef72475baf6004c "GET /api/v1/health?evidence=distribution-rerun-920602&request=27 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.003 urt=0.003
+192.168.143.2 7f1e661aa09407b03d48e97c154b2651 "GET /api/v1/health?evidence=distribution-rerun-920602&request=28 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.002
+192.168.143.2 231d6ed39323e50e1a4976a6e7dc96f5 "GET /api/v1/health?evidence=distribution-rerun-920602&request=29 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.002
+192.168.143.2 34d0d570c08634b0af533fb0a6417e23 "GET /api/v1/health?evidence=distribution-rerun-920602&request=30 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.004 urt=0.005
+
+Count requests for each backend:
+$ compose exec -T gateway grep 'evidence=distribution-rerun-920602&request=' /var/log/nginx/api.access.log | grep -o 'upstream=[^ ]*' | sort | uniq -c
+      3 upstream=172.18.0.10:8000
+      4 upstream=172.18.0.11:8000
+     23 upstream=172.18.0.8:8000
+
+All 30 requests returned HTTP 200. All three replicas served requests.
