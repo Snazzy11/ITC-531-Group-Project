@@ -1,0 +1,113 @@
+01 - Job queue delivery 
+
+This test calls the real publisher functions and runs the placeholder workers.
+It shows both jobs being queued, received, logged, and acknowledged.
+
+worker images built with:
+compose build --quiet matching_worker image_worker
+
+Start the broker and rebuilt workers:
+$ compose up -d --no-build --wait broker matching_worker image_worker
+ Container campus-seekr-broker-1 Running 
+ Container campus-seekr-matching_worker-1 Recreate 
+ Container campus-seekr-image_worker-1 Recreate 
+ Container campus-seekr-matching_worker-1 Recreated 
+ Container campus-seekr-image_worker-1 Recreated 
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Healthy 
+ Container campus-seekr-image_worker-1 Starting 
+ Container campus-seekr-broker-1 Healthy 
+ Container campus-seekr-matching_worker-1 Starting 
+ Container campus-seekr-image_worker-1 Started 
+ Container campus-seekr-matching_worker-1 Started 
+ Container campus-seekr-image_worker-1 Waiting 
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-matching_worker-1 Waiting 
+ Container campus-seekr-matching_worker-1 Healthy 
+ Container campus-seekr-broker-1 Healthy 
+ Container campus-seekr-image_worker-1 Healthy 
+
+Stop workers before publishing:
+$ compose stop matching_worker image_worker
+ Container campus-seekr-image_worker-1 Stopping 
+ Container campus-seekr-matching_worker-1 Stopping 
+ Container campus-seekr-image_worker-1 Stopped 
+ Container campus-seekr-matching_worker-1 Stopped 
+
+Exit code: 0
+
+Queue counts before publishing
+$ compose exec -T broker rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	0	0	0
+events.logger	0	0	1
+events.notifier	0	0	1
+jobs.item_matcher	0	0	0
+
+Exit code: 0
+
+Publish both test jobs
+$ compose run --rm --no-deps -T matching_worker python -c 'from app.messaging import publish_matching_job, publish_image_job
+print('"'"'Matching payload: {"item_id": 920101}'"'"')
+publish_matching_job(920101)
+print('"'"'Image payload: {"item_id": 920102, "image_ref": "evidence-workflow-image-920102.jpg"}'"'"')
+publish_image_job(920102, "evidence-workflow-image-920102.jpg")'
+ Container campus-seekr-matching_worker-run-9e3e3dcd02a1 Creating 
+ Container campus-seekr-matching_worker-run-9e3e3dcd02a1 Created 
+Matching payload: {"item_id": 920101}
+Published matching job for item 920101
+Image payload: {"item_id": 920102, "image_ref": "evidence-workflow-image-920102.jpg"}
+Published image job for item 920102
+
+Exit code: 0
+
+Queue counts with jobs waiting
+$ compose exec -T broker rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	1	0	0
+events.logger	0	0	1
+events.notifier	0	0	1
+jobs.item_matcher	1	0	0
+
+Restart both workers:
+$ compose start matching_worker image_worker
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Healthy 
+ Container campus-seekr-image_worker-1 Starting 
+ Container campus-seekr-broker-1 Healthy 
+ Container campus-seekr-matching_worker-1 Starting 
+ Container campus-seekr-matching_worker-1 Started 
+ Container campus-seekr-image_worker-1 Started 
+
+
+Queue counts after consumption:
+$ compose exec -T broker rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ... 
+name	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	0	0	1
+events.logger	0	0	1
+events.notifier	0	0	1
+jobs.item_matcher	0	0	1
+
+Worker logs for the test jobs:
+$ compose logs --no-color --since 5m matching_worker image_worker
+matching_worker-1  | INFO Waiting for jobs on jobs.item_matcher
+matching_worker-1  | INFO Waiting for jobs on jobs.item_matcher
+matching_worker-1  | INFO Received item 920101 matching is not implemented yet
+image_worker-1     | INFO Waiting for jobs on jobs.image_processor
+image_worker-1     | INFO Waiting for jobs on jobs.image_processor
+image_worker-1     | INFO Received image evidence-workflow-image-920102.jpg for item 920102 image processing is not implemented yet
+
+
+Each queue held one ready message while its worker was stopped. After restart,
+both workers logged their test payloads. Each queue then showed 0 ready messages,
+0 unacknowledged messages, and 1 consumer. Together with the successful worker
+logs and the handlers acknowledging after logging, this shows both test jobs
+were consumed and acknowledged. The workers still only perform placeholder logging.
