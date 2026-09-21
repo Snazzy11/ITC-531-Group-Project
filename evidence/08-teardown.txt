@@ -1,0 +1,126 @@
+08 - Clean teardown
+
+Remove the campus-seekr stack and its volumes, then check that no project containers or volumes remain.
+
+Project volumes before teardown:
+
+$ wsl -d rancher-desktop -- docker volume ls --filter label=com.docker.compose.project=campus-seekr
+DRIVER    VOLUME NAME
+local     campus-seekr_brokerdata
+local     campus-seekr_eventlogs
+local     campus-seekr_seekr_data
+
+Remove the stack and volumes:
+
+$ compose down --volumes
+ Container campus-seekr-matching_worker-1 Stopping 
+ Container campus-seekr-gateway-1 Stopping 
+ Container campus-seekr-image_worker-1 Stopping 
+ Container campus-seekr-logger-1 Stopping 
+ Container campus-seekr-notifier-1 Stopping 
+ Container campus-seekr-gateway-1 Stopped 
+ Container campus-seekr-gateway-1 Removing 
+ Container campus-seekr-gateway-1 Removed 
+ Container campus-seekr-app-1 Stopping 
+ Container campus-seekr-app-2 Stopping 
+ Container campus-seekr-app-3 Stopping 
+ Container campus-seekr-app-1 Stopped 
+ Container campus-seekr-app-1 Removing 
+ Container campus-seekr-app-3 Stopped 
+ Container campus-seekr-app-3 Removing 
+ Container campus-seekr-app-2 Stopped 
+ Container campus-seekr-app-2 Removing 
+ Container campus-seekr-app-1 Removed 
+ Container campus-seekr-app-2 Removed 
+ Container campus-seekr-app-3 Removed 
+ Container campus-seekr-db-1 Stopping 
+ Container campus-seekr-db-1 Stopped 
+ Container campus-seekr-db-1 Removing 
+ Container campus-seekr-db-1 Removed 
+ Container campus-seekr-matching_worker-1 Stopped 
+ Container campus-seekr-matching_worker-1 Removing 
+ Container campus-seekr-matching_worker-1 Removed 
+ Container campus-seekr-logger-1 Stopped 
+ Container campus-seekr-logger-1 Removing 
+ Container campus-seekr-logger-1 Removed 
+ Container campus-seekr-image_worker-1 Stopped 
+ Container campus-seekr-image_worker-1 Removing 
+ Container campus-seekr-image_worker-1 Removed 
+ Container campus-seekr-notifier-1 Stopped 
+ Container campus-seekr-notifier-1 Removing 
+ Container campus-seekr-notifier-1 Removed 
+ Container campus-seekr-broker-1 Stopping 
+ Container campus-seekr-broker-1 Stopped 
+ Container campus-seekr-broker-1 Removing 
+ Container campus-seekr-broker-1 Removed 
+ Volume campus-seekr_brokerdata Removing 
+ Volume campus-seekr_seekr_data Removing 
+ Network campus-seekr_default Removing 
+ Volume campus-seekr_eventlogs Removing 
+ Volume campus-seekr_brokerdata Removed 
+ Volume campus-seekr_seekr_data Removed 
+ Volume campus-seekr_eventlogs Removed 
+ Network campus-seekr_default Removed 
+
+Running containers after teardown:
+
+$ wsl -d rancher-desktop -- docker ps
+CONTAINER ID   IMAGE             COMMAND                  CREATED      STATUS                         PORTS      NAMES
+ca74887a52a7   itc531m3-worker   "python -m app.worker"   3 days ago   Up 4 seconds                   8000/tcp   itc531m3-worker-1
+66ecb36beb92   itc531m3-app      "uvicorn app.main:ap…"   3 days ago   Restarting (3) 8 seconds ago              itc531m3-app-1
+
+Volumes after teardown:
+
+$ wsl -d rancher-desktop -- docker volume ls
+DRIVER    VOLUME NAME
+local     7589ce97338a60363a9e88a64380eed2b363ece5e76e497d32ca3ca95138bb10
+local     itc531m3_pgdata
+local     m1data
+
+Check for stopped project containers too:
+
+$ wsl -d rancher-desktop -- docker ps -a --filter label=com.docker.compose.project=campus-seekr
+CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
+
+Check for project volumes:
+
+$ wsl -d rancher-desktop -- docker volume ls --filter label=com.docker.compose.project=campus-seekr
+DRIVER    VOLUME NAME
+
+No campus-seekr containers or volumes remain. The other containers and volumes
+listed above belong to other work and were left alone.
+
+Teardown repeated after testing the gateway route fix:
+
+$ compose down --volumes
+ Container campus-seekr-gateway-1 Stopping 
+ Container campus-seekr-gateway-1 Stopped 
+ Container campus-seekr-gateway-1 Removing 
+ Container campus-seekr-gateway-1 Removed 
+ Container campus-seekr-app-1 Stopping 
+ Container campus-seekr-app-1 Stopped 
+ Container campus-seekr-app-1 Removing 
+ Container campus-seekr-app-1 Removed 
+ Container campus-seekr-db-1 Stopping 
+ Container campus-seekr-db-1 Stopped 
+ Container campus-seekr-db-1 Removing 
+ Container campus-seekr-db-1 Removed 
+ Volume campus-seekr_seekr_data Removing 
+ Network campus-seekr_default Removing 
+ Volume campus-seekr_seekr_data Removed 
+ Network campus-seekr_default Removed 
+
+Running containers:
+
+$ wsl -d rancher-desktop -- docker ps
+CONTAINER ID   IMAGE             COMMAND                  CREATED      STATUS                          PORTS      NAMES
+ca74887a52a7   itc531m3-worker   "python -m app.worker"   3 days ago   Up 17 seconds                   8000/tcp   itc531m3-worker-1
+66ecb36beb92   itc531m3-app      "uvicorn app.main:ap…"   3 days ago   Restarting (3) 24 seconds ago              itc531m3-app-1
+
+Volumes:
+
+$ wsl -d rancher-desktop -- docker volume ls
+DRIVER    VOLUME NAME
+local     7589ce97338a60363a9e88a64380eed2b363ece5e76e497d32ca3ca95138bb10
+local     itc531m3_pgdata
+local     m1data

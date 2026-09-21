@@ -1,0 +1,162 @@
+07 - Failover and recovery
+
+Stop only replica 1, send requests through the gateway, then restart the replica and show it serving requests again.
+
+$ wsl -d rancher-desktop -- docker stop campus-seekr-app-1
+campus-seekr-app-1
+
+Confirm replica 1 is stopped:
+
+$ wsl -d rancher-desktop -- docker inspect --format "{{.Name}} {{.State.Status}} {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" campus-seekr-app-1 campus-seekr-app-2 campus-seekr-app-3
+/campus-seekr-app-1 exited invalid IP
+/campus-seekr-app-2 running 172.18.0.8
+/campus-seekr-app-3 running 172.18.0.10
+
+Send 30 requests with replica 1 stopped:
+$ 1..30 | ForEach-Object { $status = curl.exe -sS --max-time 15 -o NUL -w "%{http_code}" "http://localhost:8000/api/v1/health?evidence=failover-rerun-920702&request=$_"; "Request $_ : HTTP $status" }
+Request 1 : HTTP 200
+Request 2 : HTTP 200
+Request 3 : HTTP 200
+Request 4 : HTTP 200
+Request 5 : HTTP 200
+Request 6 : HTTP 200
+Request 7 : HTTP 200
+Request 8 : HTTP 200
+Request 9 : HTTP 200
+Request 10 : HTTP 200
+Request 11 : HTTP 200
+Request 12 : HTTP 200
+Request 13 : HTTP 200
+Request 14 : HTTP 200
+Request 15 : HTTP 200
+Request 16 : HTTP 200
+Request 17 : HTTP 200
+Request 18 : HTTP 200
+Request 19 : HTTP 200
+Request 20 : HTTP 200
+Request 21 : HTTP 200
+Request 22 : HTTP 200
+Request 23 : HTTP 200
+Request 24 : HTTP 200
+Request 25 : HTTP 200
+Request 26 : HTTP 200
+Request 27 : HTTP 200
+Request 28 : HTTP 200
+Request 29 : HTTP 200
+Request 30 : HTTP 200
+
+Gateway logs while replica 1 was stopped:
+
+$ compose exec -T gateway grep evidence=failover-rerun-920702 /var/log/nginx/api.access.log
+192.168.143.2 e44bc322c5715151f623a4e3a8093c51 "GET /api/v1/health?evidence=failover-rerun-920702&request=1 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.003
+192.168.143.2 ba5a361dc5a4b631342b50fd0a362709 "GET /api/v1/health?evidence=failover-rerun-920702&request=2 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.003
+192.168.143.2 41e7a988b302146d299fb2e513ee8399 "GET /api/v1/health?evidence=failover-rerun-920702&request=3 HTTP/1.1" 200 upstream=172.18.0.11:8000, 172.18.0.10:8000 rt=3.007 urt=3.003, 0.003
+192.168.143.2 e6f02d882e822c1b1a30a86d1d06f37c "GET /api/v1/health?evidence=failover-rerun-920702&request=4 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.002 urt=0.002
+192.168.143.2 52b644487f0514dc86bd243aeac3c4a1 "GET /api/v1/health?evidence=failover-rerun-920702&request=5 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 912d41073bc6a3b8ab787e718865b8ee "GET /api/v1/health?evidence=failover-rerun-920702&request=6 HTTP/1.1" 200 upstream=172.18.0.11:8000, 172.18.0.10:8000 rt=3.006 urt=3.003, 0.002
+192.168.143.2 0e375b7003e0f583adf7a1f8f8961459 "GET /api/v1/health?evidence=failover-rerun-920702&request=7 HTTP/1.1" 200 upstream=172.18.0.11:8000, 172.18.0.10:8000 rt=3.005 urt=3.002, 0.003
+192.168.143.2 4ec572dc05d853fbaac9af9c4053f831 "GET /api/v1/health?evidence=failover-rerun-920702&request=8 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.002 urt=0.002
+192.168.143.2 22d50e9a75825477d3282eee566beac8 "GET /api/v1/health?evidence=failover-rerun-920702&request=9 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 4cc00d8dcb39c1b902019b7c31175a29 "GET /api/v1/health?evidence=failover-rerun-920702&request=10 HTTP/1.1" 200 upstream=172.18.0.11:8000, 172.18.0.10:8000 rt=3.006 urt=3.003, 0.003
+192.168.143.2 cac73a9f3fc6df73fdaba10abef231c5 "GET /api/v1/health?evidence=failover-rerun-920702&request=11 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.002
+192.168.143.2 60b5285c8f10e9515890d8be0b0f0b4f "GET /api/v1/health?evidence=failover-rerun-920702&request=12 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.003
+192.168.143.2 0b00ebac002954b56efa6b60fab61471 "GET /api/v1/health?evidence=failover-rerun-920702&request=13 HTTP/1.1" 200 upstream=172.18.0.11:8000, 172.18.0.8:8000 rt=3.008 urt=3.001, 0.008
+192.168.143.2 a62463a382dfe4cc5a3985d97d295a0c "GET /api/v1/health?evidence=failover-rerun-920702&request=14 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.004
+192.168.143.2 8df58e565de37778e77cbe5010441912 "GET /api/v1/health?evidence=failover-rerun-920702&request=15 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.002
+192.168.143.2 71e8f2f752b2e4dd8a863249c82460b9 "GET /api/v1/health?evidence=failover-rerun-920702&request=16 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.002 urt=0.002
+192.168.143.2 542d73549edcf07f0f867f15b9c2fa4b "GET /api/v1/health?evidence=failover-rerun-920702&request=17 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.002
+192.168.143.2 e0e0eff0c334b59418fb4785680b6e72 "GET /api/v1/health?evidence=failover-rerun-920702&request=18 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.002 urt=0.002
+192.168.143.2 e4281b60dd85dcee125a868d7de0a45b "GET /api/v1/health?evidence=failover-rerun-920702&request=19 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.002
+192.168.143.2 6fa1eb47f3bc7fd1bc3df2e55f2c7dfb "GET /api/v1/health?evidence=failover-rerun-920702&request=20 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.002 urt=0.002
+192.168.143.2 0f6eae5269a6a6c51662d0304803d8f6 "GET /api/v1/health?evidence=failover-rerun-920702&request=21 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.001
+192.168.143.2 ed38f54186e0238ccab99eaab548783a "GET /api/v1/health?evidence=failover-rerun-920702&request=22 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.002
+192.168.143.2 9256130e2a4126ce2e27ba1eeb08b2f6 "GET /api/v1/health?evidence=failover-rerun-920702&request=23 HTTP/1.1" 200 upstream=172.18.0.11:8000, 172.18.0.10:8000 rt=3.006 urt=3.003, 0.002
+192.168.143.2 cd7332576b6efaafcad373bcbf11d495 "GET /api/v1/health?evidence=failover-rerun-920702&request=24 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.002 urt=0.003
+192.168.143.2 6283815d0cb6b3a44cafe43ec6353ed9 "GET /api/v1/health?evidence=failover-rerun-920702&request=25 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.002
+192.168.143.2 e622a60c62d627e2217cd1b107bf3f83 "GET /api/v1/health?evidence=failover-rerun-920702&request=26 HTTP/1.1" 200 upstream=172.18.0.11:8000, 172.18.0.10:8000 rt=3.007 urt=3.003, 0.004
+192.168.143.2 b5d21ca505c5f9638565e5003962a3c7 "GET /api/v1/health?evidence=failover-rerun-920702&request=27 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.005 urt=0.005
+192.168.143.2 12a53f3aaf662f2043ef843e6a108b96 "GET /api/v1/health?evidence=failover-rerun-920702&request=28 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.003
+192.168.143.2 5cbd42ca54d07a719af6736ab0081568 "GET /api/v1/health?evidence=failover-rerun-920702&request=29 HTTP/1.1" 200 upstream=172.18.0.11:8000, 172.18.0.8:8000 rt=3.006 urt=3.003, 0.003
+192.168.143.2 aa64ddb6be9ccb38714f40b3de5cd303 "GET /api/v1/health?evidence=failover-rerun-920702&request=30 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.002
+
+Restart replica 1:
+
+$ wsl -d rancher-desktop -- docker start campus-seekr-app-1
+campus-seekr-app-1
+
+Check recovery status:
+
+$ wsl -d rancher-desktop -- docker inspect --format "{{.Name}} {{.State.Health.Status}} {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" campus-seekr-app-1 campus-seekr-app-2 campus-seekr-app-3
+/campus-seekr-app-1 healthy 172.18.0.11
+/campus-seekr-app-2 healthy 172.18.0.8
+/campus-seekr-app-3 healthy 172.18.0.10
+
+Send 30 requests after restarting replica 1:
+$ 1..30 | ForEach-Object { $status = curl.exe -sS --max-time 15 -o NUL -w "%{http_code}" "http://localhost:8000/api/v1/health?evidence=recovery-rerun-920702&request=$_"; "Request $_ : HTTP $status" }
+Request 1 : HTTP 200
+Request 2 : HTTP 200
+Request 3 : HTTP 200
+Request 4 : HTTP 200
+Request 5 : HTTP 200
+Request 6 : HTTP 200
+Request 7 : HTTP 200
+Request 8 : HTTP 200
+Request 9 : HTTP 200
+Request 10 : HTTP 200
+Request 11 : HTTP 200
+Request 12 : HTTP 200
+Request 13 : HTTP 200
+Request 14 : HTTP 200
+Request 15 : HTTP 200
+Request 16 : HTTP 200
+Request 17 : HTTP 200
+Request 18 : HTTP 200
+Request 19 : HTTP 200
+Request 20 : HTTP 200
+Request 21 : HTTP 200
+Request 22 : HTTP 200
+Request 23 : HTTP 200
+Request 24 : HTTP 200
+Request 25 : HTTP 200
+Request 26 : HTTP 200
+Request 27 : HTTP 200
+Request 28 : HTTP 200
+Request 29 : HTTP 200
+Request 30 : HTTP 200
+
+Gateway logs after recovery:
+
+$ compose exec -T gateway grep evidence=recovery-rerun-920702 /var/log/nginx/api.access.log
+192.168.143.2 56c017012c9fe92478158bb2aeb5171d "GET /api/v1/health?evidence=recovery-rerun-920702&request=1 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.002
+192.168.143.2 0296e818cb4e8401c6e9f84463a81c38 "GET /api/v1/health?evidence=recovery-rerun-920702&request=2 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.003
+192.168.143.2 ae18f956557bd5ab8793a8a60a61b98e "GET /api/v1/health?evidence=recovery-rerun-920702&request=3 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.004 urt=0.004
+192.168.143.2 468c29403413b2ea104751d87457e1af "GET /api/v1/health?evidence=recovery-rerun-920702&request=4 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 3a65a2d6f45db6d2c95f134c37fc9096 "GET /api/v1/health?evidence=recovery-rerun-920702&request=5 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.003
+192.168.143.2 d7fd29716e3d79028c73f99ffcb4c3a2 "GET /api/v1/health?evidence=recovery-rerun-920702&request=6 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.003 urt=0.003
+192.168.143.2 d85feba2724907fa027c17b380a0de91 "GET /api/v1/health?evidence=recovery-rerun-920702&request=7 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.004 urt=0.005
+192.168.143.2 d1a4bccd46751181f41c0e9b3710a8ef "GET /api/v1/health?evidence=recovery-rerun-920702&request=8 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.005 urt=0.004
+192.168.143.2 c5391dea281370ee811bba48d7821394 "GET /api/v1/health?evidence=recovery-rerun-920702&request=9 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.003 urt=0.003
+192.168.143.2 84c914adb86f4e5ff26095f5f158e0f6 "GET /api/v1/health?evidence=recovery-rerun-920702&request=10 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.002
+192.168.143.2 5773fb1c0c200fe7e9df21e48fd2b822 "GET /api/v1/health?evidence=recovery-rerun-920702&request=11 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.003 urt=0.002
+192.168.143.2 9887db11f68521555dc855838beca04b "GET /api/v1/health?evidence=recovery-rerun-920702&request=12 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.003 urt=0.002
+192.168.143.2 11fa59eac7fb846d72a32ab69603dab8 "GET /api/v1/health?evidence=recovery-rerun-920702&request=13 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.002
+192.168.143.2 7f5e40b645cf07fbb92ea82b5c3e7d8d "GET /api/v1/health?evidence=recovery-rerun-920702&request=14 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.002
+192.168.143.2 f169640397d7aafe54e75f17e921c569 "GET /api/v1/health?evidence=recovery-rerun-920702&request=15 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.002 urt=0.002
+192.168.143.2 7f687ea0c150f1863b848cdea3014608 "GET /api/v1/health?evidence=recovery-rerun-920702&request=16 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.002 urt=0.002
+192.168.143.2 55358ff9ecd95f911386aed07f92ddab "GET /api/v1/health?evidence=recovery-rerun-920702&request=17 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 82da6fa2d34538826f13b3b737d937fe "GET /api/v1/health?evidence=recovery-rerun-920702&request=18 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.005 urt=0.004
+192.168.143.2 3e61dd4fded52a590b52a03b163a5a11 "GET /api/v1/health?evidence=recovery-rerun-920702&request=19 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.002 urt=0.003
+192.168.143.2 06224b52bc353578b8a3dc5d5bd8f730 "GET /api/v1/health?evidence=recovery-rerun-920702&request=20 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.002
+192.168.143.2 b27267c43a3daa407cd7b4b5a1d43fd9 "GET /api/v1/health?evidence=recovery-rerun-920702&request=21 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.002 urt=0.002
+192.168.143.2 8004ec505a7e0cf7d3f6091589618e3b "GET /api/v1/health?evidence=recovery-rerun-920702&request=22 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.002 urt=0.002
+192.168.143.2 67a68ee00ea5694073cbc27088b4cbb6 "GET /api/v1/health?evidence=recovery-rerun-920702&request=23 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 3f78d8584d356466ab3c430c07bfbe36 "GET /api/v1/health?evidence=recovery-rerun-920702&request=24 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.002 urt=0.002
+192.168.143.2 eae3873ada6bb7947462461628f19eaa "GET /api/v1/health?evidence=recovery-rerun-920702&request=25 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.002 urt=0.002
+192.168.143.2 0265eb2d44c747f99d4078c95462f209 "GET /api/v1/health?evidence=recovery-rerun-920702&request=26 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.003 urt=0.003
+192.168.143.2 0c657735776bd9168eb7683255b254e1 "GET /api/v1/health?evidence=recovery-rerun-920702&request=27 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.003
+192.168.143.2 9be105cded10806d938f13536ca05c4a "GET /api/v1/health?evidence=recovery-rerun-920702&request=28 HTTP/1.1" 200 upstream=172.18.0.11:8000 rt=0.002 urt=0.002
+192.168.143.2 706d2de756e4675f64bb1d68972faf24 "GET /api/v1/health?evidence=recovery-rerun-920702&request=29 HTTP/1.1" 200 upstream=172.18.0.10:8000 rt=0.002 urt=0.002
+192.168.143.2 196c74e56a8e5479b0e804e76a018468 "GET /api/v1/health?evidence=recovery-rerun-920702&request=30 HTTP/1.1" 200 upstream=172.18.0.8:8000 rt=0.002 urt=0.002
+
+All 30 requests succeeded with replica 1 stopped. All 30 recovery requests succeeded,
+and replica 1 (172.18.0.11) served requests again.
