@@ -1,0 +1,116 @@
+02 - Messages survive a broker restart
+
+Stop consumers so test messages remain queued during the restart
+$ compose stop matching_worker image_worker logger notifier
+ Container campus-seekr-logger-1 Stopping 
+ Container campus-seekr-image_worker-1 Stopping 
+ Container campus-seekr-notifier-1 Stopping 
+ Container campus-seekr-matching_worker-1 Stopping 
+ Container campus-seekr-matching_worker-1 Stopped 
+ Container campus-seekr-logger-1 Stopped 
+ Container campus-seekr-image_worker-1 Stopped 
+ Container campus-seekr-notifier-1 Stopped 
+
+Before publishing both job queues are empty:
+$ compose exec -T broker rabbitmqctl list_queues name durable messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	0	0	0
+events.logger	true	0	0	0
+events.notifier	true	0	0	0
+jobs.item_matcher	true	0	0	0
+
+Publish one persistent job to each durable queue:
+$ compose run --rm --no-deps -T matching_worker python -c 'from app.messaging import publish_matching_job, publish_image_job; publish_matching_job(920201); publish_image_job(920202, "durability-image-920202.jpg")'
+ Container campus-seekr-matching_worker-run-7e56cbc477eb Creating 
+ Container campus-seekr-matching_worker-run-7e56cbc477eb Created 
+Published matching job for item 920201
+Published image job for item 920202
+
+Before restart one message waits in each job queue:
+$ compose exec -T broker rabbitmqctl list_queues name durable messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	1	0	0
+events.logger	true	0	0	0
+events.notifier	true	0	0	0
+jobs.item_matcher	true	1	0	0
+
+Stop RabbitMQ without removing its volume:
+$ compose stop broker
+ Container campus-seekr-broker-1 Stopping 
+ Container campus-seekr-broker-1 Stopped 
+
+Confirm the broker container is stopped:
+$ compose ps --all broker
+NAME                    IMAGE                               COMMAND                  SERVICE   CREATED       STATUS                     PORTS
+campus-seekr-broker-1   rabbitmq:3.13.7-management-alpine   "docker-entrypoint.s…"   broker    2 hours ago   Exited (0) 2 seconds ago   
+
+Start RabbitMQ and wait for it to be healthy:
+$ compose start --wait broker
+ Container campus-seekr-broker-1 Starting 
+ Container campus-seekr-broker-1 Started 
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Healthy 
+
+After restart both messages are still waiting, with consumers stopped:
+$ compose exec -T broker rabbitmqctl list_queues name durable messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	1	0	0
+events.logger	true	0	0	0
+events.notifier	true	0	0	0
+jobs.item_matcher	true	1	0	0
+
+Ensure the broker is available before restoring consumers:
+$ compose start --wait broker
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Healthy 
+
+Restore all four consumers:
+$ compose start matching_worker image_worker logger notifier
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Waiting 
+ Container campus-seekr-broker-1 Healthy 
+ Container campus-seekr-notifier-1 Starting 
+ Container campus-seekr-broker-1 Healthy 
+ Container campus-seekr-image_worker-1 Starting 
+ Container campus-seekr-broker-1 Healthy 
+ Container campus-seekr-logger-1 Starting 
+ Container campus-seekr-broker-1 Healthy 
+ Container campus-seekr-matching_worker-1 Starting 
+ Container campus-seekr-logger-1 Started 
+ Container campus-seekr-matching_worker-1 Started 
+ Container campus-seekr-image_worker-1 Started 
+ Container campus-seekr-notifier-1 Started 
+
+After consumption both job queues have zero ready and zero unacknowledged messages:
+$ compose exec -T broker rabbitmqctl list_queues name durable messages_ready messages_unacknowledged consumers
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	0	0	1
+events.logger	true	0	0	1
+events.notifier	true	0	0	1
+jobs.item_matcher	true	0	0	1
+
+Worker logs show the same test IDs being received after restart:
+$ compose logs --no-color --since 5m matching_worker image_worker
+matching_worker-1  | INFO Waiting for jobs on jobs.item_matcher
+matching_worker-1  | INFO Received item 920201 matching is not implemented yet
+image_worker-1     | INFO Waiting for jobs on jobs.image_processor
+image_worker-1     | INFO Received image durability-image-920202.jpg for item 920202 image processing is not implemented yet
+
+Final service status:
+$ compose ps broker matching_worker image_worker logger notifier
+NAME                             IMAGE                               COMMAND                  SERVICE           CREATED             STATUS                    PORTS
+campus-seekr-broker-1            rabbitmq:3.13.7-management-alpine   "docker-entrypoint.s…"   broker            2 hours ago         Up 27 seconds (healthy)   4369/tcp, 5671-5672/tcp, 15671/tcp, 15691-15692/tcp, 25672/tcp, 127.0.0.1:15672->15672/tcp
+campus-seekr-image_worker-1      campus-seekr-image_worker           "python -m app.image…"   image_worker      11 minutes ago      Up 7 seconds              8000/tcp
+campus-seekr-logger-1            campus-seekr-logger                 "python -m app.logger"   logger            About an hour ago   Up 7 seconds              8000/tcp
+campus-seekr-matching_worker-1   campus-seekr-matching_worker        "python -m app.match…"   matching_worker   11 minutes ago      Up 7 seconds              8000/tcp
+campus-seekr-notifier-1          campus-seekr-notifier               "python -m app.notif…"   notifier          About an hour ago   Up 7 seconds              8000/tcp

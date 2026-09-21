@@ -1,0 +1,58 @@
+{
+  "$defs": {
+    "ItemPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "item_id": {
+          "exclusiveMinimum": 0,
+          "title": "Item Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "item_id"
+      ],
+      "title": "ItemPayload",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "source": {
+      "minLength": 1,
+      "title": "Source",
+      "type": "string"
+    },
+    "event_type": {
+      "const": "item.withdrawn",
+      "default": "item.withdrawn",
+      "title": "Event Type",
+      "type": "string"
+    },
+    "payload": {
+      "$ref": "#/$defs/ItemPayload"
+    }
+  },
+  "required": [
+    "source",
+    "payload"
+  ],
+  "title": "ItemWithdrawnEvent",
+  "type": "object"
+}

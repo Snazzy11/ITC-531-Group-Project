@@ -31,17 +31,26 @@ For week 1: These are the role assignments
   - Backend Engineer
   - Documentation Lead
 
-# Running the Service
+
+# Setup
 1. Clone the repository:
 ```git clone https://github.com/Snazzy11/ITC-531-Group-Project```
-2. Build and run the container:
-```docker compose -up -d --wait```
-3. Teardown:
-```docker compose down --volumes```
+2. Create a `.env.local` file in the base project directory, then copy
+`.env.local.example` to `.env.local`. Set `RABBITMQ_TAG` to
+`3.13.7-management-alpine` and choose a `BROKER_USER` and `BROKER_PASSWORD`.
+3. Build and run the container:
+```docker compose --env-file .env.local up -d --build --wait```
+4. Teardown:
+```docker compose --env-file .env.local down --volumes```
 
-## Test working
-Query the health check endpoint
-`curl "http://localhost:8000/health"`
+## Testing the Service
+Start the app and check that it responds:
+```sh
+curl http://localhost:8000/api/v1/health
+```
+
+Open http://localhost:15672 to view RabbitMQ. Log in with the values you chose.
+The matching, image, and notification workers only log messages for now.
 
 # Contributing Code
 
@@ -70,6 +79,10 @@ Whenever you make a branch, use a prefix to indicate what it is for.
 `refactor` for when the branch is exclusively refactoring old code
 `test` for adding new tests
 `chore` for cleanup, simple config changes, etc.
+
+## Adding dependencies
+When adding new dependencies you should use `uv add <package>`
+Then, you need to sync it to requirements.txt with `uv export --format requirements-txt > requirements.txt`
 
 # Decisions
 The concept we will pursue is a lost and found system for the campus community. Users will be able to upload images of items they find around campus as well as the locations they found them out and/or descriptions of lost items and last seen locations.

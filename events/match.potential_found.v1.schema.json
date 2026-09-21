@@ -1,0 +1,71 @@
+{
+  "$defs": {
+    "PotentialMatchPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "lost_item_id": {
+          "exclusiveMinimum": 0,
+          "title": "Lost Item Id",
+          "type": "integer"
+        },
+        "found_item_id": {
+          "exclusiveMinimum": 0,
+          "title": "Found Item Id",
+          "type": "integer"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "lost_item_id",
+        "found_item_id",
+        "score"
+      ],
+      "title": "PotentialMatchPayload",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "source": {
+      "minLength": 1,
+      "title": "Source",
+      "type": "string"
+    },
+    "event_type": {
+      "const": "match.potential_found",
+      "default": "match.potential_found",
+      "title": "Event Type",
+      "type": "string"
+    },
+    "payload": {
+      "$ref": "#/$defs/PotentialMatchPayload"
+    }
+  },
+  "required": [
+    "source",
+    "payload"
+  ],
+  "title": "PotentialMatchEvent",
+  "type": "object"
+}

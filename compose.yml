@@ -3,8 +3,10 @@ name: campus-seekr
 services:
   app:
     build: .
-    expose: ["8000"]
     environment:
+      BROKER_HOST: broker
+      BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
+      BROKER_PASSWORD: ${BROKER_PASSWORD:?set BROKER_PASSWORD in .env.local}
       DATABASE_URL: "postgresql+psycopg2://seekr:seekr-devonly@db:5432/seekr"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
@@ -16,11 +18,71 @@ services:
       db:
         condition: service_healthy
 
+  matching_worker:
+    build: .
+    command: ["python", "-m", "matching_worker"]
+    environment:
+      BROKER_HOST: broker
+      BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
+      BROKER_PASSWORD: ${BROKER_PASSWORD:?set BROKER_PASSWORD in .env.local}
+    depends_on:
+      broker:
+        condition: service_healthy
+
+  image_worker:
+    build: .
+    command: ["python", "-m", "image_worker"]
+    environment:
+      BROKER_HOST: broker
+      BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
+      BROKER_PASSWORD: ${BROKER_PASSWORD:?set BROKER_PASSWORD in .env.local}
+    depends_on:
+      broker:
+        condition: service_healthy
+
+  logger:
+    build: .
+    command: ["python", "-m", "logger"]
+    environment:
+      BROKER_HOST: broker
+      BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
+      BROKER_PASSWORD: ${BROKER_PASSWORD:?set BROKER_PASSWORD in .env.local}
+    volumes: ["eventlogs:/app/logs"]
+    depends_on:
+      broker:
+        condition: service_healthy
+
+  notifier:
+    build: .
+    command: ["python", "-m", "notifier"]
+    environment:
+      BROKER_HOST: broker
+      BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
+      BROKER_PASSWORD: ${BROKER_PASSWORD:?set BROKER_PASSWORD in .env.local}
+    depends_on:
+      broker:
+        condition: service_healthy
+
   gateway:
     image: nginx:1.27.4-alpine
-    ports: ["8081:80"]
+    ports: ["8000:80"]
     volumes: ["./gateway.conf:/etc/nginx/conf.d/default.conf:ro"]
     depends_on: [app]
+
+  # Module 3 RabbitMQ setup, with milestone credentials and persistent storage.
+  broker:
+    image: rabbitmq:${RABBITMQ_TAG:?set RABBITMQ_TAG in .env.local (see README)}
+    environment:
+      RABBITMQ_DEFAULT_USER: ${BROKER_USER:?set BROKER_USER in .env.local (see README)}
+      RABBITMQ_DEFAULT_PASS: ${BROKER_PASSWORD:?set BROKER_PASSWORD in .env.local (see README)}
+    ports: ["127.0.0.1:15672:15672"]
+    volumes: ["brokerdata:/var/lib/rabbitmq"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 15s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
 
   db:
     image: postgres:16.6-alpine3.20
@@ -35,9 +97,11 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U seekr -d seekr"]
       interval: 5s
-      timeout: 3s
-      retries: 12
+      timeout: 5s
+      retries: 10
       start_period: 10s
 
 volumes:
+  brokerdata:
+  eventlogs:
   seekr_data:

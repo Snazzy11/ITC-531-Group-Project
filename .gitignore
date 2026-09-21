@@ -4,3 +4,4 @@ adapters/*.env
 __pycache__/
 *.idea
 *.venv
+.env.local

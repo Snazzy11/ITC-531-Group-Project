@@ -1,6 +1,7 @@
 FROM python:3.14.7-slim-trixie
 
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/app
 
 WORKDIR /app
 
@@ -11,4 +12,4 @@ COPY ./app/ /app/
 
 EXPOSE 8000
 
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000", "--root-path", "/api/v1"]
