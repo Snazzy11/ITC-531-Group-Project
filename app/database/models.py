@@ -10,16 +10,18 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
-    true
+    true,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from database.database import Base
 
+
 class ItemType(enum.IntEnum):
     LOST = 0
     FOUND = 1
+
 
 class ItemStatus(str, enum.Enum):
     OPEN = "open"
@@ -28,9 +30,9 @@ class ItemStatus(str, enum.Enum):
     WITHDRAWN = "withdrawn"
     EXPIRED = "expired"
 
+
 class Location(Base):
     __tablename__ = "locations"
-
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False, unique=True)
@@ -38,8 +40,8 @@ class Location(Base):
     description = Column(String(500))
     is_active = Column(Boolean, nullable=False, server_default=true())
 
-
     items = relationship("Item", back_populates="location", passive_deletes="all")
+
 
 class Item(Base):
     __tablename__ = "items"
@@ -92,6 +94,7 @@ class Item(Base):
     def matches(self):
         return self.lost_matches + self.found_matches
 
+
 class Match(Base):
     __tablename__ = "matches"
     __table_args__ = (
@@ -115,8 +118,8 @@ class Match(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     lost_item = relationship(
-        "Item", foreign_keys="lost_item_id", back_populates="lost_matches"
+        "Item", foreign_keys=[lost_item_id], back_populates="lost_matches"
     )
     found_item = relationship(
-        "Item", foreign_keys="found_item_id", back_populates="found_matches"
+        "Item", foreign_keys=[found_item_id], back_populates="found_matches"
     )
