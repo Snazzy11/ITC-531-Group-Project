@@ -32,16 +32,28 @@ For week 1: These are the role assignments
   - Documentation Lead
 
 # Running the Service
-1. Clone the repository:
-```git clone https://github.com/Snazzy11/ITC-531-Group-Project```
-2. Build and run the container:
-```docker compose -up -d --wait```
-3. Teardown:
-```docker compose down --volumes```
 
-## Test working
-Query the health check endpoint
-`curl "http://localhost:8000/health"`
+In the project folder, check that `.env.local` is in `.gitignore`, then copy
+`.env.local.example` to `.env.local`. Set `RABBITMQ_TAG` to
+`3.13.7-management-alpine` and choose a `BROKER_USER` and `BROKER_PASSWORD`.
+These are local development values. Compose will report an error if any are missing
+or empty.
+
+Start the app and check that it responds:
+
+```sh
+docker compose --env-file .env.local up -d --build --wait
+curl http://localhost:8081/api/v1/health
+```
+
+Open http://localhost:15672 to view RabbitMQ. Log in with the values you chose.
+The matching, image, and notification workers only log messages for now.
+
+Stop everything and delete the stored messages and event logs:
+
+```sh
+docker compose --env-file .env.local down --volumes
+```
 
 # Contributing Code
 
