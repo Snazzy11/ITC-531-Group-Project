@@ -14,7 +14,7 @@ These really are our best guesses, and we have done googling and math to back it
 | Duration                | 50-70+ ms ; 100-150 ms                                 | 3      |
 | Memory                  | 100 mb                                                 | 4      |
 | Concurrency             | Relatively high (for matching operations especially)   | 5      |
-| State required          | State required; items need to be put into database     | 6      |
+| State required          | State not required; still needs connection to DB     | 6      |
 | Latency budget          | 1s                                                     | 7      |
 | Long-running risk       | Low                                                    | 8      |
 ### Methods
@@ -25,7 +25,7 @@ These really are our best guesses, and we have done googling and math to back it
 3. Guess: 50+ ms p50; 100-150 ms p95
 4. Estimate based on container using ```docker stats``` on our machines.
 5. Concurrency is to be expected. The operations with the most concurrency will likely be those related to matching, the posting of a new item will require that the existing items posted to the application be checked for potential matches and users will then need to be notified of these potential matches. Because of this, the posting of a singular item may require concurrent operations proportional to that of the items within the system.
-6. State will be required in order to place new items within the database.
+6. The API should be dumb and tell other places to do work, and another place to store data
 7. Beyond two-second slowdown would be noticeable. Think of scrolling down a list of items and their photos. Reaching the bottom and having to wait more than 2 seconds is annoying. However, the nature of having to stop and look at each item in your category gives us plenty of time to load new items. 
 8. The work done wihtin the API should not have significant risk for long-running operations. The task of calculating matches is O(n) where n is the number of unmatched items in the database, for each item to be matched. However, this is an asynchronous background task and not returned by the API.
 ## Gateway
@@ -36,7 +36,7 @@ These really are our best guesses, and we have done googling and math to back it
 | Duration                | 30+ ms ; 70+ ms                                        | 3      |
 | Memory                  | 10 mb                                                  | 4      |
 | Concurrency             | High                                                   | 5      |
-| State required          | No state required                                      | 6      |
+| State required          | A volume just for configuration files                                      | 6      |
 | Latency budget          | 200 ms                                                 | 7      |
 | Long-running risk       | Very low                                               | 8      |
 ### Methods
@@ -45,7 +45,7 @@ These really are our best guesses, and we have done googling and math to back it
 3. Guess: 20+ ms p50, ; less than the API as the gateway just sits before the API.
 4. Estimate based on container using ```docker stats```.
 5. Concurrency to the gateway will also be relatively high as was the case for the API as all requests will be routed through the gateway first. 
-6. No state will be required for the gateway; nothing the gateway achieves will need to be stored or saved.
+6. The gateway needs no state except for configuration files. So it would probably need a volume for that
 7. The gateway should have a short duration and as such the latency budget should be relatively low too.
 8. The gateway should not have any long-running operations.
 ## Image Worker
