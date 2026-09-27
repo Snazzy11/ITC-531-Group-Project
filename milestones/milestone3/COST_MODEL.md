@@ -1,6 +1,6 @@
 # Part 3: Cost model
 
-Keeping photo processing on the same server as the rest of Campus Seekr is the cheapest option in this model. Moving it to a function adds a small charge but does not remove the server we still need for the API, database, and broker. A function is more useful if photo processing would otherwise need its own server.
+Using function for photo processing and on-demand containers for matching and notifications. Keeping photo processing on the shared server is still the cheapest option in this model. Moving it to a function adds a small charge but does not remove the server we still need for the API, database, and broker. A function is more useful if photo processing would otherwise need its own server.
 
 ## Workload
 
@@ -21,19 +21,25 @@ The greeting tests in Part 1 measured a warm mean of 0.329 ms for the function a
 - Thumbnail views per photo: 5.
 - Application logs / worker logs: 16 KiB per photo / 4 KiB per attempt.
 - Function response: 1 KiB per attempt.
+- Matching / notifier: One run each per photo, using 0.25 vCPU and 0.5 GB per container.
+- Container billed time: 60 seconds per run, including image download and startup.
+- Notification data out: 1 KiB per photo.
+- Container image storage: 0.5 GB total.
 - Retention: Photos until teardown
 
 Uploads are spread evenly across four months, starting with an empty store. Each photo is stored for two months on average. Retried processing overwrites the same thumbnail. We do a full month of log storage per entry
 
 ## Options compared
 
-1. Shared server: the API, gateway, database, broker, workers, and subscribers run together on an 8 GB server.
-2. Function worker: the same server stays running, but photo processing moves to an on-demand function.
+All three options keep the API, gateway, database, broker, and logger on an 8 GB server. Matching and notifications use on-demand containers in every option
+
+1. Shared server: photo processing also runs on the shared server.
+2. Function worker: photo processing runs as an on-demand function.
 3. Separate worker server: the shared server stays running and a second, 1 GB server handles photos.
 
 For the function option, a small consumer on the shared server would read RabbitMQ jobs, invoke the function, check the result, and acknowledge successful work. The function would read and write objects without opening a database connection.
 
-Part 1 estimates 6 GB for the database and about 390 MB across the API, gateway, broker, notifier, and logger. We use an 8 GB server to allow additional room for the workers and operating system. This is a planning estimate, and we still need to measure whether that is enough. The 100x calculation holds capacity fixed and scales related traffic with the photo count.
+A dispatcher on the shared server would also start matching and notifier tasks when jobs arrive.
 
 ## Prices
 
@@ -53,12 +59,12 @@ These are AWS reference prices for US East (N. Virginia), us-east-1.
 ## What each bill includes
 
 - Per-request charges: Shared or separate server: Object reads and writes, zero extra per API or broker request. Function worker: Same, plus function invocations.
-- Compute duration: Shared or separate server: Zero separately, included in server capacity. Function worker: Memory x billed seconds x rate.
-- Idle capacity: Shared or separate server: $44/month shared, or $51/month with a separate worker. Function worker: $44/month for shared services. Zero idle function charge.
+- Compute duration: All options: Matching and notifier container CPU and memory x billed seconds x rates. Function worker: Also function memory x billed seconds x rate.
+- Idle capacity: Shared or separate server: $44/month shared, or $51/month with a separate worker. Function worker: $44/month for shared services. Zero idle function or on-demand container compute charge.
 - HTTP front door: Shared or separate server: Zero extra. nginx uses the existing server. Function worker: Zero extra, same nginx, and the worker uses direct invocation.
-- Data out: Shared or separate server: Thumbnail downloads. Other server traffic assumed within its bundle. Function worker: Same, plus a conservative charge for the 1 KiB function response.
+- Data out / networking: All options: Thumbnail downloads, notification traffic, and task public IPv4 addresses. Other server traffic assumed within its bundle. Function worker: Same, plus a conservative charge for the 1 KiB function response.
 - Log ingestion and retention: Shared or separate server: Application and worker logs, retained for 30 days. Function worker: Same.
-- Storage at rest: Shared or separate server: Photos, database and broker disk included in the server. Function worker: Same, zero extra scratch-storage charge within the included 512 MB.
+- Storage at rest: All options: Object storage for photos and ECR storage for container images. Database and broker disk included in the server. No extra scratch-storage charge within the included 20 GB per Fargate task or 512 MB per function.
 
 ## Arithmetic and totals
 
@@ -78,92 +84,98 @@ Function response data = A x R / 1048576 x 0.09
 Shared server = 4 x 44 = 176
 Separate worker = 4 x 7 = 28 additional
 
+Container runs = 2 x R
+Container compute = 2 x R x 60 x (0.25 x 0.000011244 + 0.5 x 0.000001235)
+Task public IPv4 = 2 x R x (60 / 3600) x 0.005
+Notification data out = R / 1048576 x 0.09
+Container image storage = 0.5 x 4 x 0.10 = 0.20
+
 ### Four-month cost at 19,200 jobs
 
 Shared server:
 
 - Per-request charges: $0.238080
-- Compute duration: $0
+- Compute duration: $7.899264
 - Fixed / idle capacity: $176
 - HTTP front door: $0
-- Data out: $1.687500
+- Data out / networking: $4.889148
 - Log ingestion and retention: $0.194092
-- Storage at rest: $1.897500
-- Total: $180.02
+- Storage at rest: $2.097500
+- Total: $191.32
 
-Function worker:
+Function worker (Part 2 selection):
 
 - Per-request charges: $0.241920
-- Compute duration: $0.320001
+- Compute duration: $8.219265
 - Fixed / idle capacity: $176
 - HTTP front door: $0
-- Data out: $1.689148
+- Data out / networking: $4.890796
 - Log ingestion and retention: $0.194092
-- Storage at rest: $1.897500
-- Total: $180.34
+- Storage at rest: $2.097500
+- Total: $191.64
 
 Separate worker server:
 
 - Per-request charges: $0.238080
-- Compute duration: $0
+- Compute duration: $7.899264
 - Fixed / idle capacity: $204
 - HTTP front door: $0
-- Data out: $1.687500
+- Data out / networking: $4.889148
 - Log ingestion and retention: $0.194092
-- Storage at rest: $1.897500
-- Total: $208.02
+- Storage at rest: $2.097500
+- Total: $219.32
 
 ### Four-month cost at 1,920,000 jobs (100x)
 
 Shared server:
 
 - Per-request charges: $23.808000
-- Compute duration: $0
+- Compute duration: $789.926400
 - Fixed / idle capacity: $176
 - HTTP front door: $0
-- Data out: $168.750000
+- Data out / networking: $488.914795
 - Log ingestion and retention: $19.409180
-- Storage at rest: $189.750000
-- Total: $577.72
+- Storage at rest: $189.950000
+- Total: $1,688.01
 
-Function worker:
+Function worker (Part 2 selection):
 
 - Per-request charges: $24.192000
-- Compute duration: $32.000064
+- Compute duration: $821.926464
 - Fixed / idle capacity: $176
 - HTTP front door: $0
-- Data out: $168.914795
+- Data out / networking: $489.079590
 - Log ingestion and retention: $19.409180
-- Storage at rest: $189.750000
-- Total: $610.27
+- Storage at rest: $189.950000
+- Total: $1,720.56
 
 Separate worker server
 
 - Per-request charges: $23.808000
-- Compute duration: $0
+- Compute duration: $789.926400
 - Fixed / idle capacity: $204
 - HTTP front door: $0
-- Data out: $168.750000
+- Data out / networking: $488.914795
 - Log ingestion and retention: $19.409180
-- Storage at rest: $189.750000
-- Total: $605.72
+- Storage at rest: $189.950000
+- Total: $1,716.01
 
 
 ## Break-even
 
-With the same four-month period and one attempt per job:
+With the same four-month period and one attempt per job, matching, notifications, and image storage cost the same in all three options, so they do not change the crossing point:
 
-function_total = aR + b = 0.000226180228R + 176
-shared_total   = cR + F = 0.000209227698R + 176
-separate_total = cR + F = 0.000209227698R + 204
+function_total = aR + b = 0.000804352726R + 176.20
+shared_total   = cR + F = 0.000787400195R + 176.20
+separate_total = cR + F = 0.000787400195R + 204.20
 
 R* = (F - b) / (a - c)
 
 Shared server:
-R* = (176 - 176) / (0.000226180228 - 0.000209227698) = 0
+R* = (176.20 - 176.20) / (0.000804352726 - 0.000787400195) = 0
 
 Separate worker:
-R* = (204 - 176) / (0.000226180228 - 0.000209227698)
+R* = (204.20 - 176.20) / (0.000804352726 - 0.000787400195)
    = approximately 1,651,671 photo jobs over the term
 
 Against a separate worker server, the crossing is about 86 times the expected 19,200 jobs. And 100x volume is 1.16 times the break-even volume. Before allowances, the function is cheaper than a separate worker below this point and more expensive above it.
@@ -178,6 +190,8 @@ The two main uncertainties for the function are billed duration and repeated att
 Since every photo needs at least one attempt, 0.860 attempts per photo is impossible and means the function already costs more than the separate worker at 100× volume before free allowances.
 
 At 100x volume, the two-second function is already more expensive. It would need to finish in under 1.716 seconds, 14.2% quicker, to become cheaper.
+
+Matching and notifier runtime also affects the full budget. Doubling both container runtimes to 120 seconds adds about $11.10 at expected volume or $1,109.93 at 100
 
 ## Free usage and the term budget
 
