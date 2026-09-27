@@ -1,6 +1,10 @@
 # Profile
 Please use "long-running server" and "persistent container" as interchangeable here. That is what I intended when writing it.
 Also, "function" and "functional" are intended to mean the same thing here.
+
+It is very difficult to provide exact numbers when things are mostly unimplemented so far.
+The directions have not explicity state we create very much code at this time, and the assignments take long enough that we havent put in the extra time to implement things yet. 
+These really are our best guesses, and we have done googling and math to back it up.
 ## APIs
 
 | Field                   | Estimate                                               | Method |
