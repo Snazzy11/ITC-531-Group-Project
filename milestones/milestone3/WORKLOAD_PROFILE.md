@@ -74,7 +74,7 @@
 | Latency budget          | Not (yet) applicable                                                         | 7      |
 | Long-running risk       | Not (yet) applicable                                                         | 8      |
 ### Methods
-Note: I would like to add some background to how this feature will work. A list of tags will be attached to the items and used in an attempt to produce a matching score. The words in the item descriptions will be used in that score as well. The items with the highest potential scores will be given to the user and they will determine the match. The specifics of this dont quite match our original specifications for the database, but this is how we plan it now.
+Note: I would like to add some background to how this feature will work. A list of tags will be attached to the items in the database and used in an attempt to produce a matching score. The words in the item descriptions will be used in that score as well. The items with the highest potential scores will be given to the user and they will determine the match. The specifics of this dont quite match our original specifications for the database, but this is how we plan it now.
 1.  Again working from the 30% estimate from earlier, if 4800 users have the need to locate an item, the matching worker will then have a baseline of 4800 matches to make. Additionally, the figure will likely be higher than this to account for false-flags and/or incorrect matches.
 2. The work for the matching worker will be dictated by the event of items being posted, and once again the peak time will likely be at the end of school hours.
 3. Not yet applicable, the functionality for the matching worker is not implemented currently, and it has not been requested that we write this code yet. It is hard to produce an estimate, as the O(n) nature will grow as the app grows. Even a few thousand items should take seconds or less as very few fields need to be checked.
@@ -142,7 +142,29 @@ Note: I would like to add some background to how this feature will work. A list 
 5.  Concurrency will be high for the logger; lots of events will be logged throughout the various components of the application and these events will be logged concurrently as they are happening.
 6. State will be required for the logger, events will be logged within a file in case the need arises to read and analyze them.
 7. Guess: 100 ms. Higher than this might cause an exponential backlog of tasks and freeze the app in a hard to diagnose way.
-8. The logger should not have any long-running operations. 
+8. The logger should not have any long-running operations. Disk writes are sufficently fast
+
+
+## Database
+| Field                   | Estimate                                               | Method |
+| ----------------------- | ------------------------------------------------------ | ------ |
+| Requests/jobs per month | >16,000                                                  | 1      |
+| Arrival Pattern         | Event-driven but needed constantly, will scale with demanding hours as usual | 2      |
+| Duration                | 1-5 ms p50 ; <10 ms p95                              | 3      |
+| Memory                  | 6 GB                                                  | 4      |
+| Concurrency             | High                                                   | 5      |
+| State required          | State required, database needs persistence by defintion | 6      |
+| Latency budget          | 20 ms                                                 | 7      |
+| Long-running risk       | Very Low                                               | 8      |
+### Methods
+1.  Needs to be used multiple times for every operation. A guess based on previous estimations.
+2. The database will be hit all the time, with single commands on many opertations.
+3. Based on a quick google search, 1-10ms is common on production and our database will be plenty small for quick hits.
+4. A guess based on a google search would be about 16GB. I have seen a brand new oracle database take 6 GB before, but we will be using lighter wieght databases than Oracle. The speed of querys goes down as memory does, as it needs adequete space for indexing. Still, we wont be storing much data yet.
+5.  Concurrency will be high for the database, since hits will be done by so many different pieces of code. It is built for this though.
+6. State will be required for the database, since a database needs persistence almost by definition. It would be useless otherwise.
+7. Guess: 20 ms. Higher than this is downright uncommon at this scale. It needs to be fast or everything else will slow down.
+8. The database should not have any long-running operations, that is not how databases usually work at all.
 
 # Measured Baseline
 We created a python script to measure the exact latency on every request. For the warm latency, 10 requests were sent with nothing recorded, and then another 50 are measured. Then the measurements are inspected and counted to produce the numbers below.
