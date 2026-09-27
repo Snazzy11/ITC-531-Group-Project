@@ -1,4 +1,6 @@
 # Profile
+Please use "long-running server" and "persistent container" as interchangeable here. That is what I intended when writing it.
+Also, "function" and "functional" are intended to mean the same thing here.
 ## APIs
 
 | Field                   | Estimate                                               | Method |
