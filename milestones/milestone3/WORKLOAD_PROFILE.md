@@ -145,7 +145,7 @@ Note: I would like to add some background to how this feature will work. A list 
 8. The logger should not have any long-running operations. 
 
 # Measured Baseline
-We created a python script to measure the exact latency on every request. For the warm latency, 10 requests were sent with nothing recorded, and then another 50 are measured.
+We created a python script to measure the exact latency on every request. For the warm latency, 10 requests were sent with nothing recorded, and then another 50 are measured. Then the measurements are inspected and counted to produce the numbers below.
 
 ```bash
 # host/function warm latency
@@ -186,14 +186,6 @@ first_function_request: 0.001133s
 first_server_request: 0.002008s
 ```
 
-| Field | Function shape | Server shape |
-| Requests/jobs per month | Estimate based on expected application usage; label as estimate | Same workload assumption |
-
-
-Arrival pattern | Describe as steady/diurnal/bursty/event-driven; give peak:trough ratio | Same
-Duration | Measured: warm mean/p50 and p95 from local requests | Measured: warm mean/p50 and p95 from local requests
-Memory | Estimate working set from local process observation; state method | Same
-Concurrency | Estimate from peak arrival rate × request duration; state assumptions | Same
-State required | From code: request processing itself requires no persistent application state; identify any state actually retained | greeted is currently process-local state
-Latency budget | State your assumed user-facing p95 target and consequence of exceeding it; label assumption | Same
-Long-running risk | Inspect code for WebSocket/SSE/streaming and >60-second work | Same
+This data tells us that the extra layer for the host and handler adds noticeable extra letency. 
+This will hold true on a server as well, and it should be kept in mind.
+On the other hand, a hosted server has very efficient tooling for this kind of thing and it could be less noticible.
