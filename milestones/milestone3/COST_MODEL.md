@@ -27,19 +27,19 @@ Uploads are spread evenly across four months, starting with an empty store. Each
 
 ## Options compared
 
-1. Shared server: the API, gateway, database, broker, workers, and subscribers run together on a 4 GB server.
+1. Shared server: the API, gateway, database, broker, workers, and subscribers run together on an 8 GB server.
 2. Function worker: the same server stays running, but photo processing moves to an on-demand function.
 3. Separate worker server: the shared server stays running and a second, 1 GB server handles photos.
 
 For the function option, a small consumer on the shared server would read RabbitMQ jobs, invoke the function, check the result, and acknowledge successful work. The function would read and write objects without opening a database connection.
 
-Part 1 lists about 390 MB across the API, gateway, broker, notifier, and logger, but doesn't include database memory. We use 4 GB to leave room for them and the operating system. The 100x calculation holds capacity fixed and scales related traffic with the photo count.
+Part 1 estimates 6 GB for the database and about 390 MB across the API, gateway, broker, notifier, and logger. We use an 8 GB server to allow additional room for the workers and operating system. This is a planning estimate, and we still need to measure whether that is enough. The 100x calculation holds capacity fixed and scales related traffic with the photo count.
 
 ## Prices
 
 These are AWS reference prices for US East (N. Virginia), us-east-1.
 
-- Shared Linux server, public IPv4, 4 GB RAM, 80 GB disk, 4 TB transfer: $24/month.
+- Shared Linux server, public IPv4, 8 GB RAM, 160 GB disk, 5 TB transfer: $44/month.
 - Separate Linux worker, public IPv4, 1 GB RAM, 40 GB disk, 2 TB transfer: $7/month.
 - Function invocations: $0.20 per 1 million requests
 - Function execution, x86, first tier: $0.0000166667 per GB-second
@@ -54,7 +54,7 @@ These are AWS reference prices for US East (N. Virginia), us-east-1.
 
 - Per-request charges: Shared or separate server: Object reads and writes, zero extra per API or broker request. Function worker: Same, plus function invocations.
 - Compute duration: Shared or separate server: Zero separately, included in server capacity. Function worker: Memory x billed seconds x rate.
-- Idle capacity: Shared or separate server: $24/month shared, or $31/month with a separate worker. Function worker: $24/month for shared services. Zero idle function charge.
+- Idle capacity: Shared or separate server: $44/month shared, or $51/month with a separate worker. Function worker: $44/month for shared services. Zero idle function charge.
 - HTTP front door: Shared or separate server: Zero extra. nginx uses the existing server. Function worker: Zero extra, same nginx, and the worker uses direct invocation.
 - Data out: Shared or separate server: Thumbnail downloads. Other server traffic assumed within its bundle. Function worker: Same, plus a conservative charge for the 1 KiB function response.
 - Log ingestion and retention: Shared or separate server: Application and worker logs, retained for 30 days. Function worker: Same.
@@ -75,7 +75,7 @@ Logs = R x (16 + 4 x A) / 1048576 x (0.50 + 0.03)
 Function requests = A x R x 0.0000002
 Function compute = A x R x 0.5 x 2 x 0.0000166667
 Function response data = A x R / 1048576 x 0.09
-Shared server = 4 x 24 = 96
+Shared server = 4 x 44 = 176
 Separate worker = 4 x 7 = 28 additional
 
 ### Four-month cost at 19,200 jobs
@@ -84,34 +84,34 @@ Shared server:
 
 - Per-request charges: $0.238080
 - Compute duration: $0
-- Fixed / idle capacity: $96
+- Fixed / idle capacity: $176
 - HTTP front door: $0
 - Data out: $1.687500
 - Log ingestion and retention: $0.194092
 - Storage at rest: $1.897500
-- Total: $100.02
+- Total: $180.02
 
 Function worker:
 
 - Per-request charges: $0.241920
 - Compute duration: $0.320001
-- Fixed / idle capacity: $96
+- Fixed / idle capacity: $176
 - HTTP front door: $0
 - Data out: $1.689148
 - Log ingestion and retention: $0.194092
 - Storage at rest: $1.897500
-- Total: $100.34
+- Total: $180.34
 
 Separate worker server:
 
 - Per-request charges: $0.238080
 - Compute duration: $0
-- Fixed / idle capacity: $124
+- Fixed / idle capacity: $204
 - HTTP front door: $0
 - Data out: $1.687500
 - Log ingestion and retention: $0.194092
 - Storage at rest: $1.897500
-- Total: $128.02
+- Total: $208.02
 
 ### Four-month cost at 1,920,000 jobs (100x)
 
@@ -119,51 +119,51 @@ Shared server:
 
 - Per-request charges: $23.808000
 - Compute duration: $0
-- Fixed / idle capacity: $96
+- Fixed / idle capacity: $176
 - HTTP front door: $0
 - Data out: $168.750000
 - Log ingestion and retention: $19.409180
 - Storage at rest: $189.750000
-- Total: $497.72
+- Total: $577.72
 
 Function worker:
 
 - Per-request charges: $24.192000
 - Compute duration: $32.000064
-- Fixed / idle capacity: $96
+- Fixed / idle capacity: $176
 - HTTP front door: $0
 - Data out: $168.914795
 - Log ingestion and retention: $19.409180
 - Storage at rest: $189.750000
-- Total: $530.27
+- Total: $610.27
 
 Separate worker server
 
 - Per-request charges: $23.808000
 - Compute duration: $0
-- Fixed / idle capacity: $124
+- Fixed / idle capacity: $204
 - HTTP front door: $0
 - Data out: $168.750000
 - Log ingestion and retention: $19.409180
 - Storage at rest: $189.750000
-- Total: $525.72
+- Total: $605.72
 
 
 ## Break-even
 
 With the same four-month period and one attempt per job:
 
-function_total = aR + b = 0.000226180228R + 96
-shared_total   = cR + F = 0.000209227698R + 96
-separate_total = cR + F = 0.000209227698R + 124
+function_total = aR + b = 0.000226180228R + 176
+shared_total   = cR + F = 0.000209227698R + 176
+separate_total = cR + F = 0.000209227698R + 204
 
 R* = (F - b) / (a - c)
 
 Shared server:
-R* = (96 - 96) / (0.000226180228 - 0.000209227698) = 0
+R* = (176 - 176) / (0.000226180228 - 0.000209227698) = 0
 
 Separate worker:
-R* = (124 - 96) / (0.000226180228 - 0.000209227698)
+R* = (204 - 176) / (0.000226180228 - 0.000209227698)
    = approximately 1,651,671 photo jobs over the term
 
 Against a separate worker server, the crossing is about 86 times the expected 19,200 jobs. And 100x volume is 1.16 times the break-even volume. Before allowances, the function is cheaper than a separate worker below this point and more expensive above it.
