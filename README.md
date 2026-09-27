@@ -4,6 +4,7 @@
 
 - Python package management will be done with uv
   - Make sure you run uv init and uv sync upon pulling the repo
+  - Refer to section below about adding dependencies
 - Refer to the requirements.txt and pyproject.toml for requirements
   - As of now these are able to fall out of sync. Will add github actions to ensure sync in the future
 - Our Python version is 3.14
@@ -16,7 +17,7 @@
 
 ## Roles
 
-Developer roles will be rotated every week.
+Developer roles will be rotated occasionally.
 The roles are: Project Lead, Backend Engineer, DevOps Engineer, Documentation Lead
 
 Each role is NOT assigned because that person is supposed to do all that work for a given week. Everyone is always responsible for every task, and we all review each other. Instead, a role assignment just means that that individual should be “checking up on” their domain.
@@ -73,14 +74,15 @@ The matching, image, and notification workers only log messages for now.
 
 ### Branch Prefixes
 Whenever you make a branch, use a prefix to indicate what it is for.
-`feature/` for new features
-`fix` for bugs and fixes
-`docs` for when you make only documentation changes
-`refactor` for when the branch is exclusively refactoring old code
-`test` for adding new tests
-`chore` for cleanup, simple config changes, etc.
+1. `feature/` for new features
+2. `milestone<milestone_#>/` for project milestones. Like `milestone1/`
+3. `fix/` for bugs and fixes
+4. `docs/` for when you make only documentation changes
+5. `refactor/` for when the branch is exclusively refactoring old code
+6. `test/` for adding new tests
+7. `chore/` for cleanup, simple config changes, etc.
 
-## Adding dependencies
+### Adding dependencies
 When adding new dependencies you should use `uv add <package>`
 Then, you need to sync it to requirements.txt with `uv export --format requirements-txt > requirements.txt`
 
