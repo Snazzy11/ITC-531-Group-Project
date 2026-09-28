@@ -1,4 +1,5 @@
 import enum
+from typing import List
 
 from sqlalchemy import (
     Boolean,
@@ -12,7 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
     true,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy.sql import func
 
 from database.database import Base
