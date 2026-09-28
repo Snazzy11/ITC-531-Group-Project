@@ -1,0 +1,1 @@
+../../docs/MESSAGE_ARCHITECTURE.md

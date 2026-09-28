@@ -1,0 +1,40 @@
+Client
+  |  HTTP (HTTPS)
+  v
++--------------------------+
+| Gateway (Apache)         |
+| long-running server      |
+| localhost:8000           |
++------------+-------------+
+             |  HTTP
+             v
++--------------------------+       +--------------------------------------+
+| API (FastAPI)            |--SQL->| Database                             |
+| long-running server      |       | long-running server                  |
+| internal port 8000       |       | data on a seeker_database volume    |
++------------+-------------+       +-------------------------------------+
+             |  publishes jobs and events via python,
+             |  including match events submitted by users
+             v
++--------------------------+       +-----------------------------------+
+| RabbitMQ message broker  |------>| broker_data as a docker volume   |
+| long-running server      |       +----------------------------------+
+|                          |
+| default exchange ""      |
+| seekr.events (topic)     |
++--+-----------------------+
+   |
+   +-- jobs.item_matcher ---------------> Matching worker     [container-on-demand]
+   |                                      |
+   |                                      +--SQL--> Database (above)
+   |
+   +-- jobs.image_processor ------------> Image worker        [function]
+   |
+   +-- seekr.events, binding "#"
+   |     -> events.logger --------------> Logger              [long-running server]
+   |                                      |
+   |                                      +--> eventlogs volume (/app/logs/events.jsonl)
+   |
+   +-- seekr.events, bindings match.potential_found, match.confirmed
+         -> events.notifier ------------> Notifier            [container-on-demand]
+                                          (external notification API, planned)
