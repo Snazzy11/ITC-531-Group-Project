@@ -25,9 +25,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from database.models import ItemStatus
 
 REQUEST = ConfigDict(extra="forbid", str_strip_whitespace=True)
+RESPONSE = model_config = ConfigDict(from_attributes=True)
 
 
-# --- items ------------------------------------------------------------------
+
+# items
 
 class ItemBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -59,7 +61,7 @@ class ItemStatusUpdate(BaseModel):
 
 
 class ItemResponse(ItemBase):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = RESPONSE
 
     id: int
     type: Literal[0, 1]
@@ -67,7 +69,7 @@ class ItemResponse(ItemBase):
     created_at: datetime
 
 
-# --- matches ----------------------------------------------------------------
+# matches
 
 class MatchCreate(BaseModel):
     model_config = REQUEST
@@ -77,7 +79,7 @@ class MatchCreate(BaseModel):
 
 
 class MatchResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = RESPONSE
 
     id: int
     lost_item_id: int
@@ -85,7 +87,7 @@ class MatchResponse(BaseModel):
     created_at: datetime
 
 
-# --- locations --------------------------------------------------------------
+# locations
 
 class LocationBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -109,7 +111,7 @@ class LocationResponse(LocationBase):
     """`is_active` is omitted: it only governs whether a location can be picked
     for a new post, and retired locations still appear on old posts."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = RESPONSE
 
     id: int
 
@@ -119,3 +121,19 @@ class LocationAdminResponse(LocationResponse):
     apart."""
 
     is_active: bool
+    
+    
+# users
+
+class UserBase(BaseModel):
+    display_name: str = Field(min_length=6, max_length=50)
+    real_name: str = Field(min_length=6, max_length=50)
+
+class UserCreate(UserBase):
+    model_config = REQUEST
+    password: str = Field(min_length=6, max_length=100)
+    
+class UserResponse(UserBase):
+    model_config = RESPONSE
+    
+    id: int

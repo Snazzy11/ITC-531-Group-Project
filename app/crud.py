@@ -214,7 +214,7 @@ def delete_location(db: Session, location: models.Location) -> None:
 
 # users
 def create_user(db: Session, user: schemas.UserCreate) -> models.Location:
-    row = models.Location(**user.model_dump()) # Double check if model dump is usable in this scenario
+    row = models.User(**user.model_dump()) # Double check if model dump is usable in this scenario
     db.add(row)
     db.commit()
     db.refresh(row)

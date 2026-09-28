@@ -66,7 +66,7 @@ def require_admin(x_admin_token: Annotated[str | None, Header()] = None) -> None
 admin = Depends(require_admin)
 
 
-# --- items ------------------------------------------------------------------
+# items
 
 @app.post(
     "/items",
@@ -220,7 +220,7 @@ def hard_delete_item(item_id: int, db: Session = Depends(get_db)):
     return Response(status_code=204)
 
 
-# --- matches ----------------------------------------------------------------
+# matches
 
 @app.post(
     "/matches",
@@ -453,8 +453,17 @@ def hard_delete_location(location_id: int, db: Session = Depends(get_db)):
         ) from None
     return Response(status_code=204)
 
+# users
+@app.post( # TODO: Needs actual testing
+    "/users",
+    response_model=schemas.UserResponse,
+    status_code=201,
+    responses=errors.errors(404, 409, 422),
+)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    return crud.create_user(db, user)
 
-# --- meta -------------------------------------------------------------------
+# meta
 
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
