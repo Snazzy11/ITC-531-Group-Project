@@ -24,12 +24,20 @@ class ItemType(enum.IntEnum):
 
 
 class ItemStatus(str, enum.Enum):
-    OPEN = "open"
-    MATCHED = "matched"
-    RETURNED = "returned"
-    WITHDRAWN = "withdrawn"
-    EXPIRED = "expired"
+    OPEN = "open" # Fully unmatched item; also for items with proposed but unclaimed matches
+    MATCHED = "matched" # Matched to another item
+    RETURNED = "returned" # Matched and returned to use
+    WITHDRAWN = "withdrawn" # Removed from application by the user, for any reason
+    EXPIRED = "expired" # Stale for too long
 
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    user_display_name = Column(String(50), nullable=False, unique=True)
+    user_real_name = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    password_hash = Column(String(255), nullable=False) # Reduce or change later
 
 class Location(Base):
     __tablename__ = "locations"

@@ -18,5 +18,5 @@ def get_db():
         db.close()
 
 def init_db():
-    import database.models
+    import database.models # ALWAYS KEEP; this import runs code # TODO actually maybe it doesnt... please check
     Base.metadata.create_all(bind=engine)

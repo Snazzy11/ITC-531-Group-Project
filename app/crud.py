@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from database import models
 import schemas
+from database.models import Item, Match, Location
 
 # Transitions a client may ask for directly via PATCH /items/{id}/status.
 # Anything -> MATCHED and MATCHED -> OPEN are system-only: they happen when a
@@ -31,7 +32,7 @@ EDITABLE_STATUSES = {
 }
 
 
-# --- items ------------------------------------------------------------------
+# items
 
 def create_item(db: Session, item: schemas.ItemCreate) -> models.Item:
     # status is not passed: the column defaults to 'open'.
@@ -42,7 +43,7 @@ def create_item(db: Session, item: schemas.ItemCreate) -> models.Item:
     return row
 
 
-def get_item(db: Session, item_id: int) -> models.Item | None:
+def get_item(db: Session, item_id: int) -> type[Item] | None:
     return db.query(models.Item).filter(models.Item.id == item_id).first()
 
 
@@ -55,7 +56,7 @@ def list_items(
     include_withdrawn: bool = False,
     limit: int = 20,
     offset: int = 0,
-) -> list[models.Item]:
+) -> list[type[Item]]:
     query = db.query(models.Item)
 
     if type is not None:
@@ -109,7 +110,7 @@ def delete_item(db: Session, item: models.Item) -> None:
     db.commit()
 
 
-# --- matches ----------------------------------------------------------------
+# matches
 
 def create_match(db: Session, lost: models.Item, found: models.Item) -> models.Match:
     """Creates the pair and moves both items to 'matched' in one transaction,
@@ -129,7 +130,7 @@ def get_match(db: Session, match_id: int) -> models.Match | None:
 
 def list_matches(
     db: Session, item_id: int | None = None, limit: int = 20, offset: int = 0
-) -> list[models.Match]:
+) -> list[type[Match]]:
     query = db.query(models.Match)
 
     if item_id is not None:
@@ -156,7 +157,7 @@ def delete_match(db: Session, match: models.Match) -> None:
     db.commit()
 
 
-# --- locations --------------------------------------------------------------
+# locations
 
 def create_location(db: Session, location: schemas.LocationCreate) -> models.Location:
     row = models.Location(**location.model_dump())
@@ -166,13 +167,13 @@ def create_location(db: Session, location: schemas.LocationCreate) -> models.Loc
     return row
 
 
-def get_location(db: Session, location_id: int) -> models.Location | None:
+def get_location(db: Session, location_id: int) -> type[Location] | None:
     return db.query(models.Location).filter(models.Location.id == location_id).first()
 
 
 def list_locations(
     db: Session, include_inactive: bool = False, limit: int = 100, offset: int = 0
-) -> list[models.Location]:
+) -> list[type[Location]]:
     query = db.query(models.Location)
 
     if not include_inactive:
@@ -209,3 +210,12 @@ def count_items_at_location(db: Session, location_id: int) -> int:
 def delete_location(db: Session, location: models.Location) -> None:
     db.delete(location)
     db.commit()
+
+
+# users
+def create_user(db: Session, user: schemas.UserCreate) -> models.Location:
+    row = models.Location(**user.model_dump()) # Double check if model dump is usable in this scenario
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
