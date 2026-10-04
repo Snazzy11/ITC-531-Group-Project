@@ -26,7 +26,7 @@ RabbitMQ stores its data in the brokerdata volume.
 Each job goes through the default exchange. Its routing key is the queue name.
 
 - `publish_matching_job` sends `{"item_id": 42}` to `jobs.item_matcher`, which is both the queue name and routing key. `matching_worker` reads from this queue.
-- `publish_image_job` sends `{"item_id": 42, "image_ref": "test-image.jpg"}` to `jobs.image_processor`, which is both the queue name and routing key. `image_worker` reads from this queue.
+- `publish_image_job` sends `{"item_id": 42, "image_ref": "test-image.jpg"}` to `jobs.image_processor`, which is both the queue name and routing key. `image_worker` reads from this queue. `image_ref` is the object's storage key (see `STORAGE_DESIGN.md`); the example here is a placeholder, not a real key shape.
 
 Both workers check the message, log that they received it, and then acknowledge
 it. An acknowledgment tells RabbitMQ it can remove the message. Matching and

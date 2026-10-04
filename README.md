@@ -9,6 +9,15 @@
   - As of now these are able to fall out of sync. Will add github actions to ensure sync in the future
 - Our Python version is 3.14
 
+# Usage guide
+- Use this link to see all available APIs and their shapes
+  - `http://localhost:8000/docs`
+
+# Design docs
+- `docs/Error Contract.md` — response envelope, status codes, error codes
+- `docs/MESSAGE_ARCHITECTURE.md` — queues, events, and the workers that consume them
+- `docs/STORAGE_DESIGN.md` — object storage key scheme, content-type handling, bucket layout
+
 # Developers
 
 - Parker Scott 
