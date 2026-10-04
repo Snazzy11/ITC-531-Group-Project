@@ -76,6 +76,8 @@ class Item(Base):
     # user_id = Column(Integer) # would be a foreign key later on
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    # TODO # IMPORTANT # Add image model, it has s3 path, uuid, and "is_processed". Only processed images can EVER be used by the app
+
     location = relationship("Location", back_populates="items")
     lost_matches = relationship(
         "Match",

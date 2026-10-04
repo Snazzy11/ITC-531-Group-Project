@@ -13,6 +13,11 @@ In a real app we would want thumbnail size, and a high resolution photo for
 inspection. This is a good balance for us, for now.
 
 Here we use uuids for images. Any id in relation to an image is a uuid
+
+## Architecture
+
+See Architecture.drawio.html
+
 ## Key template
 
 ```
