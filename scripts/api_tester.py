@@ -1,6 +1,6 @@
 """End-to-end smoke test against a real Postgres.
 
-    DATABASE_URL=postgresql+psycopg://... python test_api.py
+    PYTHONPATH=app DATABASE_URL=postgresql+psycopg2://seekr:seekr-devonly@localhost:5432/seekr uv run --with httpx python scripts/api_tester.py
 
 Drops and recreates every table, then exercises each rule in the contract and
 prints the status code and body.
@@ -16,7 +16,7 @@ from database.database import Base, engine
 
 Base.metadata.drop_all(bind=engine)
 
-from main import app  # noqa: E402  (imported after the drop so create_all runs)
+from api import app  # noqa: E402  (imported after the drop so create_all runs)
 
 c = TestClient(app, raise_server_exceptions=False)
 A = {"X-Admin-Token": os.getenv("ADMIN_TOKEN", "dev-admin-token")}

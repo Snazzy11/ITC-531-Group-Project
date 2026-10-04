@@ -1,4 +1,5 @@
 import enum
+import uuid
 
 from sqlalchemy import (
     Boolean,
@@ -10,6 +11,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    and_,
     true,
 )
 from sqlalchemy.orm import relationship
@@ -29,6 +31,13 @@ class ItemStatus(str, enum.Enum):
     RETURNED = "returned"
     WITHDRAWN = "withdrawn"
     EXPIRED = "expired"
+
+
+class ImageStatus(str, enum.Enum):
+    AWAITING_UPLOAD = "awaiting_upload"
+    PROCESSING = "processing"
+    READY = "ready"
+    REJECTED = "rejected"
 
 
 class Location(Base):
@@ -76,9 +85,15 @@ class Item(Base):
     # user_id = Column(Integer) # would be a foreign key later on
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    # TODO # IMPORTANT # Add image model, it has s3 path, uuid, and "is_processed". Only processed images can EVER be used by the app
-
     location = relationship("Location", back_populates="items")
+    # Only a processed image is ever shown; the worker keeps at most one per item.
+    photo = relationship(
+        "Image",
+        primaryjoin=lambda: and_(Image.item_id == Item.id, Image.status == ImageStatus.READY),
+        uselist=False,
+        viewonly=True,
+        lazy="selectin",
+    )
     lost_matches = relationship(
         "Match",
         foreign_keys="Match.lost_item_id",
@@ -97,24 +112,46 @@ class Item(Base):
         return self.lost_matches + self.found_matches
 
 class Image(Base):
+    """One upload attempt. Rows are created when an upload link is issued; the
+    image worker fills in the rest."""
+
     __tablename__ = "images"
 
     id = Column(Integer, primary_key=True, index=True)
     item_id = Column(
         Integer,
-        ForeignKey("items.id", ondelete="RESTRICT"),
+        ForeignKey("items.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-
-    upload_id = Column(String, nullable=False, unique=True, index=True)
-    pending_key = Column(String, nullable=False, unique=True)
-
-    original_name = Column(String, nullable=False)
-    content_type = Column(String, nullable=False)
-    size_bytes = Column(Integer, nullable=False)
-    uploaded_at = Column(DateTime(timezone=True), nullable=False)
-
+    upload_id = Column(
+        String(36),
+        nullable=False,
+        unique=True,
+        index=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    status = Column(
+        Enum(
+            ImageStatus,
+            name="image_status",
+            native_enum=False,
+            length=20,
+            validate_strings=True,
+            values_callable=lambda status: [member.value for member in status],
+        ),
+        nullable=False,
+        default=ImageStatus.AWAITING_UPLOAD,
+        server_default=ImageStatus.AWAITING_UPLOAD.value,
+        index=True,
+    )
+    photo_key = Column(String(255))
+    # What `file -k` said the original upload was, and its size.
+    content_type = Column(String(100))
+    size_bytes = Column(Integer)
+    reject_reason = Column(String(200))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    processed_at = Column(DateTime(timezone=True))
 
 
 class Match(Base):

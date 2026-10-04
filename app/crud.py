@@ -1,5 +1,5 @@
 """Database access. Every function takes a Session and returns rows or None -
-no HTTP knowledge, no exceptions raised on purpose. main.py decides what a
+no HTTP knowledge, no exceptions raised on purpose. api.py decides what a
 None or an IntegrityError means to a client.
 
 The one piece of policy that lives here is CLIENT_TRANSITIONS, because it
@@ -210,26 +210,69 @@ def delete_location(db: Session, location: models.Location) -> None:
     db.delete(location)
     db.commit()
 
-# --- images --------------------------------------------------------------
-def insert_image(
-    db: Session,
-    item_id: int,
-    upload_id: str,
-    pending_key: str,
-    original_name: str,
-    content_type: str,
-    size_bytes: int,
-) -> models.Image:
-    row = models.Image(
-        item_id=item_id,
-        upload_id=upload_id,
-        pending_key=pending_key,
-        original_name=original_name,
-        content_type=content_type,
-        size_bytes=size_bytes,
-        uploaded_at=datetime.now(timezone.utc),
-    )
+# --- images -----------------------------------------------------------------
+
+def create_image(db: Session, item: models.Item) -> models.Image:
+    # upload_id and status come from the column defaults.
+    row = models.Image(item_id=item.id)
     db.add(row)
     db.commit()
     db.refresh(row)
     return row
+
+
+def get_image(db: Session, item_id: int, upload_id: str) -> models.Image | None:
+    return (
+        db.query(models.Image)
+        .filter(models.Image.item_id == item_id, models.Image.upload_id == upload_id)
+        .first()
+    )
+
+
+def list_upload_ids(db: Session, item_id: int) -> list[str]:
+    rows = db.query(models.Image.upload_id).filter(models.Image.item_id == item_id)
+    return [row.upload_id for row in rows]
+
+
+def set_image_status(
+    db: Session, image: models.Image, status: models.ImageStatus
+) -> models.Image:
+    image.status = status
+    db.commit()
+    db.refresh(image)
+    return image
+
+
+def mark_image_rejected(db: Session, image: models.Image, reason: str) -> None:
+    image.status = models.ImageStatus.REJECTED
+    image.reject_reason = reason
+    image.processed_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def mark_image_ready(
+    db: Session, image: models.Image, photo_key: str, content_type: str, size_bytes: int
+) -> list[str]:
+    """Makes this the item's photo and deletes the previous one's row in the
+    same transaction, so an item never has two. Returns the replaced photo
+    keys for the caller to delete from the store after the commit."""
+    replaced = (
+        db.query(models.Image)
+        .filter(
+            models.Image.item_id == image.item_id,
+            models.Image.status == models.ImageStatus.READY,
+            models.Image.id != image.id,
+        )
+        .all()
+    )
+    replaced_keys = [old.photo_key for old in replaced]
+    for old in replaced:
+        db.delete(old)
+
+    image.status = models.ImageStatus.READY
+    image.photo_key = photo_key
+    image.content_type = content_type
+    image.size_bytes = size_bytes
+    image.processed_at = datetime.now(timezone.utc)
+    db.commit()
+    return replaced_keys

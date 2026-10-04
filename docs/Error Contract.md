@@ -66,16 +66,17 @@ is not.
 | 401 | `UNAUTHENTICATED` | Admin route, no credentials |
 | 403 | `FORBIDDEN` | Signed in, not an admin |
 | 404 | `NOT_FOUND` | Unknown route |
-| 404 | `ITEM_NOT_FOUND` / `MATCH_NOT_FOUND` / `LOCATION_NOT_FOUND` | Referenced row missing |
+| 404 | `ITEM_NOT_FOUND` / `MATCH_NOT_FOUND` / `LOCATION_NOT_FOUND` / `IMAGE_NOT_FOUND` | Referenced row missing |
 | 405 | `METHOD_NOT_ALLOWED` | Wrong verb on a real path |
 | 409 | `ITEM_NOT_OPEN` | Matching an item that is not `open` |
 | 409 | `ITEM_HAS_MATCHES` | Hard-deleting an item that is in a match |
-| 409 | `ITEM_CLOSED` | Editing a `returned` post |
+| 409 | `ITEM_CLOSED` | Editing, or adding a photo to, a `returned` post |
 | 409 | `INVALID_STATUS_TRANSITION` | e.g. `open` → `returned` |
 | 409 | `MATCH_ALREADY_EXISTS` | Duplicate pair (`uq_matches_item_pair`) |
 | 409 | `LOCATION_INACTIVE` | Posting to a retired location |
 | 409 | `LOCATION_IN_USE` | Hard-deleting a location that has items |
 | 409 | `LOCATION_NAME_TAKEN` | Duplicate location name |
+| 409 | `UPLOAD_NOT_RECEIVED` | Completing a photo upload before the file was PUT to `upload_url` |
 | 422 | `VALIDATION_ERROR` | Pydantic rejected the payload; `fields` populated |
 | 422 | `ITEM_TYPE_MISMATCH` | A match side points at the wrong `type` |
 | 422 | `MATCH_SELF` | `lost_item_id == found_item_id` |
@@ -87,6 +88,7 @@ is not.
 
 - **200** - retrieved or updated.
 - **201** - created; body is the new resource.
+- **202** - accepted for background processing (`.../images/{upload_id}/complete`).
 - **204** - withdrawn, unmatched, or retired; no body. `DELETE /items/{id}` is
   idempotent, so withdrawing an already-withdrawn item is still a 204.
 

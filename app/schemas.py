@@ -22,7 +22,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from database.models import ItemStatus
+from database.models import ImageStatus, ItemStatus
 
 REQUEST = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -65,6 +65,8 @@ class ItemResponse(ItemBase):
     type: Literal[0, 1]
     status: ItemStatus
     created_at: datetime
+    # Presigned GET for the processed photo; expires, so don't store it.
+    photo_url: str | None = None
 
 
 # --- matches ----------------------------------------------------------------
@@ -119,3 +121,21 @@ class LocationAdminResponse(LocationResponse):
     apart."""
 
     is_active: bool
+
+
+# --- images -----------------------------------------------------------------
+
+class ImageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    upload_id: str
+    status: ImageStatus
+    reject_reason: str | None = None
+    photo_url: str | None = None
+
+
+class ImageUploadResponse(ImageResponse):
+    """PUT the file to upload_url, then POST to .../complete."""
+
+    upload_url: str
+    expires_in: int

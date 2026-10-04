@@ -54,6 +54,7 @@ NOT_FOUND = "NOT_FOUND"
 ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
 MATCH_NOT_FOUND = "MATCH_NOT_FOUND"
 LOCATION_NOT_FOUND = "LOCATION_NOT_FOUND"
+IMAGE_NOT_FOUND = "IMAGE_NOT_FOUND"
 
 METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
 
@@ -66,6 +67,7 @@ MATCH_ALREADY_EXISTS = "MATCH_ALREADY_EXISTS"
 LOCATION_INACTIVE = "LOCATION_INACTIVE"
 LOCATION_IN_USE = "LOCATION_IN_USE"
 LOCATION_NAME_TAKEN = "LOCATION_NAME_TAKEN"
+UPLOAD_NOT_RECEIVED = "UPLOAD_NOT_RECEIVED"
 
 # 422 - we cannot process the values that were sent
 VALIDATION_ERROR = "VALIDATION_ERROR"
@@ -207,7 +209,7 @@ async def handle_unexpected(request: Request, exc: Exception):
 
 
 def register_error_handlers(app: FastAPI) -> None:
-    """Called once from main.py"""
+    """Called once from api.py"""
     app.add_exception_handler(StarletteHTTPException, handle_http_exception)
     app.add_exception_handler(RequestValidationError, handle_validation_error)
     app.add_exception_handler(OperationalError, handle_db_unavailable)

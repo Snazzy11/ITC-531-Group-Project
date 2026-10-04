@@ -19,12 +19,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      broker:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
 
   matching_worker:
     build: .
     command: ["python", "-m", "matching_worker"]
-    env_file:
-      - store.env
     environment:
       BROKER_HOST: broker
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
@@ -36,12 +38,19 @@ services:
   image_worker:
     build: .
     command: ["python", "-m", "image_worker"]
+    env_file:
+      - store.env
     environment:
       BROKER_HOST: broker
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
       BROKER_PASSWORD: ${BROKER_PASSWORD:?set BROKER_PASSWORD in .env.local}
+      DATABASE_URL: "postgresql+psycopg2://seekr:seekr-devonly@db:5432/seekr"
     depends_on:
       broker:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      storage:
         condition: service_healthy
 
   logger:

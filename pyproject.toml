@@ -8,9 +8,10 @@ dependencies = [
     "boto3>=1.43.108",
     "fastapi==0.140.10",
     "pika>=1.4.4",
+    "pillow>=12.3.0",
+    "pillow-heif>=1.8.0",
     "psycopg2-binary==2.9.12",
     "pydantic>=2.13.5",
-    "python-multipart>=0.0.32",
     "sqlalchemy~=2.0.52",
     "uvicorn==0.51.0",
 ]

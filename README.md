@@ -39,9 +39,12 @@ For week 1: These are the role assignments
 2. Create a `.env.local` file in the base project directory, then copy
 `.env.local.example` to `.env.local`. Set `RABBITMQ_TAG` to
 `3.13.7-management-alpine` and choose a `BROKER_USER` and `BROKER_PASSWORD`.
-3. Build and run the container:
+3. Copy `store.env.example` to `store.env`. The defaults point at the local
+RustFS S3 server (`storage` in `compose.yml`); the file's comments say what to
+change for real AWS S3.
+4. Build and run the container:
 ```docker compose --env-file .env.local up -d --build --wait```
-4. Teardown:
+5. Teardown:
 ```docker compose --env-file .env.local down --volumes```
 
 ## Testing the Service
@@ -51,7 +54,9 @@ curl http://localhost:8000/api/v1/health
 ```
 
 Open http://localhost:15672 to view RabbitMQ. Log in with the values you chose.
-The matching, image, and notification workers only log messages for now.
+The matching and notification workers only log messages for now. The image
+worker processes photo uploads; `docs/STORAGE_DESIGN.md` walks through the
+upload flow. The local S3 API (RustFS) is at http://localhost:9000.
 
 # Contributing Code
 
