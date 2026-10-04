@@ -43,12 +43,18 @@ loc = show("create loc", c.post("/locations", json={"name": "Pearce Hall", "coor
 show("dup loc name", c.post("/locations", json={"name": "Pearce Hall", "coordinates": "40.1,-84.2"}, headers=A), 409)
 loc2 = c.post("/locations", json={"name": "School of Music", "coordinates": "40.3,-84.9"}, headers=A).json()["id"]
 
-show("item bad type", c.post("/items", json={"name": "Keys", "type": 5, "location_id": loc}), 422)
-show("item extra field", c.post("/items", json={"name": "Keys", "type": 0, "location_id": loc, "status": "open"}), 422)
-show("item unknown loc", c.post("/items", json={"name": "Keys", "type": 0, "location_id": 9999}), 404)
-lost = show("create lost item", c.post("/items", json={"name": "Blue keys", "description": "carabiner", "type": 0, "location_id": loc}), 201).json()["id"]
-found = show("create found item", c.post("/items", json={"name": "Keyring", "type": 1, "location_id": loc}), 201).json()["id"]
-found2 = c.post("/items", json={"name": "Wallet", "type": 1, "location_id": loc}).json()["id"]
+uid = show("create user", c.post("/users", json={"display_name": "tester1", "real_name": "Test User", "password": "secret123", "is_admin": False}), 201).json()["id"]
+show("dup display name", c.post("/users", json={"display_name": "tester1", "real_name": "Someone Else", "password": "secret123", "is_admin": False}), 409)
+if "password" in show("list users", c.get("/users"), 200).text:
+    failures.append("list users: response includes the password hash")
+show("item unknown user", c.post("/items", json={"name": "Keys", "type": 0, "location_id": loc, "user_id": 9999}), 404)
+
+show("item bad type", c.post("/items", json={"name": "Keys", "type": 5, "location_id": loc, "user_id": uid}), 422)
+show("item extra field", c.post("/items", json={"name": "Keys", "type": 0, "location_id": loc, "user_id": uid, "status": "open"}), 422)
+show("item unknown loc", c.post("/items", json={"name": "Keys", "type": 0, "location_id": 9999, "user_id": uid}), 404)
+lost = show("create lost item", c.post("/items", json={"name": "Blue keys", "description": "carabiner", "type": 0, "location_id": loc, "user_id": uid}), 201).json()["id"]
+found = show("create found item", c.post("/items", json={"name": "Keyring", "type": 1, "location_id": loc, "user_id": uid}), 201).json()["id"]
+found2 = c.post("/items", json={"name": "Wallet", "type": 1, "location_id": loc, "user_id": uid}).json()["id"]
 
 show("list items", c.get("/items?limit=2"), 200)
 show("filter type+q", c.get("/items?q=keys&type=0"), 200)
@@ -75,7 +81,7 @@ show("withdrawn hidden", c.get("/items?q=Keyring"), 200)
 show("empty patch", c.patch(f"/items/{found2}", json={}), 422)
 show("patch item", c.patch(f"/items/{found2}", json={"description": "brown leather"}), 200)
 show("retire loc", c.delete(f"/locations/{loc2}", headers=A), 204)
-show("post to retired loc", c.post("/items", json={"name": "Hat", "type": 1, "location_id": loc2}), 409)
+show("post to retired loc", c.post("/items", json={"name": "Hat", "type": 1, "location_id": loc2, "user_id": uid}), 409)
 show("items by location", c.get(f"/locations/{loc}/items"), 200)
 show("hard delete loc in use", c.delete(f"/locations/{loc}/hard", headers=A), 409)
 show("hard delete empty loc", c.delete(f"/locations/{loc2}/hard", headers=A), 204)

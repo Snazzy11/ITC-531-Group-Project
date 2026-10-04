@@ -44,8 +44,8 @@ class ImageStatus(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
-    user_display_name = Column(String(50), nullable=False, unique=True)
-    user_real_name = Column(String(50), nullable=False)
+    display_name = Column(String(50), nullable=False, unique=True)
+    real_name = Column(String(50), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     password_hash = Column(String(255), nullable=False) # TODO change later
     is_admin = Column(Boolean, nullable=False)

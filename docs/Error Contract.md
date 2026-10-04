@@ -63,10 +63,10 @@ is not.
 
 | Status | Code | Raised when |
 |---|---|---|
-| 401 | `UNAUTHENTICATED` | Admin route, no credentials |
-| 403 | `FORBIDDEN` | Signed in, not an admin |
+| 401 | `UNAUTHENTICATED` | Admin route, no `X-Admin-Token` header |
+| 403 | `FORBIDDEN` | Admin route, wrong `X-Admin-Token` |
 | 404 | `NOT_FOUND` | Unknown route |
-| 404 | `ITEM_NOT_FOUND` / `MATCH_NOT_FOUND` / `LOCATION_NOT_FOUND` / `IMAGE_NOT_FOUND` | Referenced row missing |
+| 404 | `ITEM_NOT_FOUND` / `MATCH_NOT_FOUND` / `LOCATION_NOT_FOUND` / `IMAGE_NOT_FOUND` / `USER_NOT_FOUND` | Referenced row missing |
 | 405 | `METHOD_NOT_ALLOWED` | Wrong verb on a real path |
 | 409 | `ITEM_NOT_OPEN` | Matching an item that is not `open` |
 | 409 | `ITEM_HAS_MATCHES` | Hard-deleting an item that is in a match |
@@ -76,6 +76,7 @@ is not.
 | 409 | `LOCATION_INACTIVE` | Posting to a retired location |
 | 409 | `LOCATION_IN_USE` | Hard-deleting a location that has items |
 | 409 | `LOCATION_NAME_TAKEN` | Duplicate location name |
+| 409 | `USER_NAME_TAKEN` | Duplicate user display name |
 | 409 | `UPLOAD_NOT_RECEIVED` | Completing a photo upload before the file was PUT to `upload_url` |
 | 422 | `VALIDATION_ERROR` | Pydantic rejected the payload; `fields` populated |
 | 422 | `ITEM_TYPE_MISMATCH` | A match side points at the wrong `type` |

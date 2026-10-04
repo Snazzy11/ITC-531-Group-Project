@@ -286,16 +286,23 @@ def mark_image_ready(
 
 def create_user(db: Session, user: schemas.UserCreate) -> User:
     # Currently we will allow anyone to create an account with any access level
+    salt = os.urandom(16)
+    digest = scrypt(user.password.encode(), salt=salt, n=2**10, r=8, p=1) # in prod n >= 2**16
     row = models.User(
-        user_display_name=user.display_name,
-        user_real_name=user.real_name,
+        display_name=user.display_name,
+        real_name=user.real_name,
         is_admin=user.is_admin,
-        password_hash=scrypt(user.password.encode(), salt=os.urandom(16), n=2**10, r=8, p=1).hex() # in prod n >= 2**16
+        # The salt is kept so a password can be checked once login exists.
+        password_hash=f"{salt.hex()}${digest.hex()}",
     )
     db.add(row)
     db.commit()
     db.refresh(row)
     return row
+
+
+def get_user(db: Session, user_id: int) -> User | None:
+    return db.query(models.User).filter(models.User.id == user_id).first()
 
 
 def list_users(db: Session, limit: int = 100, offset: int = 0) -> list[type[User]]:

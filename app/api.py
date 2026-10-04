@@ -102,6 +102,8 @@ def emit(event_type: str, item_id: int) -> None:
     responses=errors.errors(404, 409, 422),
 )
 def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db)):
+    if crud.get_user(db, item.user_id) is None:
+        raise APIError(404, errors.USER_NOT_FOUND, "user not found")
     location = crud.get_location(db, item.location_id)
     if location is None:
         raise APIError(404, errors.LOCATION_NOT_FOUND, "location not found")
@@ -572,12 +574,18 @@ def get_image_status(item_id: int, upload_id: str, db: Session = Depends(get_db)
     "/users",
     response_model=schemas.UserResponse,
     status_code=201,
-    responses=errors.errors(404, 409, 422),
+    responses=errors.errors(409, 422),
 )
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    return crud.create_user(db, user)
+    try:
+        return crud.create_user(db, user)
+    except IntegrityError:
+        db.rollback()
+        raise APIError(
+            409, errors.USER_NAME_TAKEN, "a user with that display name already exists"
+        ) from None
 
-@app.get( "/users")
+@app.get("/users", response_model=list[schemas.UserResponse])
 def list_users(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=200),
