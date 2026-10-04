@@ -7,7 +7,7 @@ describes the item lifecycle rather than any single endpoint.
 """
 
 from sqlalchemy.orm import Session
-
+from datetime import datetime, timezone
 from database import models
 import schemas
 
@@ -209,3 +209,27 @@ def count_items_at_location(db: Session, location_id: int) -> int:
 def delete_location(db: Session, location: models.Location) -> None:
     db.delete(location)
     db.commit()
+
+# --- images --------------------------------------------------------------
+def insert_image(
+    db: Session,
+    item_id: int,
+    upload_id: str,
+    pending_key: str,
+    original_name: str,
+    content_type: str,
+    size_bytes: int,
+) -> models.Image:
+    row = models.Image(
+        item_id=item_id,
+        upload_id=upload_id,
+        pending_key=pending_key,
+        original_name=original_name,
+        content_type=content_type,
+        size_bytes=size_bytes,
+        uploaded_at=datetime.now(timezone.utc),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row

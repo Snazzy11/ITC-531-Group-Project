@@ -3,6 +3,8 @@ name: campus-seekr
 services:
   app:
     build: .
+    env_file:
+      - store.env
     environment:
       BROKER_HOST: broker
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
@@ -21,6 +23,8 @@ services:
   matching_worker:
     build: .
     command: ["python", "-m", "matching_worker"]
+    env_file:
+      - store.env
     environment:
       BROKER_HOST: broker
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
@@ -100,8 +104,28 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+  
+  #Not our provider; here for the purpose of testing the storage endpoints.
+  storage:
+    image: rustfs/rustfs:1.0.0
+    environment:
+      RUSTFS_ACCESS_KEY: seekr
+      RUSTFS_SECRET_KEY: seekr-devonly
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+    ports: ["${S3_PORT:-9000}:9000"]     # 9000 = the S3 API, and the only port this module needs
+    volumes: ["s3data:/data"]
+    healthcheck:
+      # An unauthenticated GET returns 403, which is a live, correctly-authenticating
+      # server. -sS without -f treats that as success; -f or wget would call it a failure.
+      test: ["CMD", "curl", "-sS", "-o", "/dev/null", "http://127.0.0.1:9000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
 
 volumes:
   brokerdata:
   eventlogs:
   seekr_data:
+  s3data:

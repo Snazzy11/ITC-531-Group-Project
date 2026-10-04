@@ -94,6 +94,26 @@ class Item(Base):
     def matches(self):
         return self.lost_matches + self.found_matches
 
+class Image(Base):
+    __tablename__ = "images"
+
+    id = Column(Integer, primary_key=True, index=True)
+    item_id = Column(
+        Integer,
+        ForeignKey("items.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+    upload_id = Column(String, nullable=False, unique=True, index=True)
+    pending_key = Column(String, nullable=False, unique=True)
+
+    original_name = Column(String, nullable=False)
+    content_type = Column(String, nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    uploaded_at = Column(DateTime(timezone=True), nullable=False)
+
+
 
 class Match(Base):
     __tablename__ = "matches"
