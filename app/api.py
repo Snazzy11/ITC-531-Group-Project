@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Lost & Found API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Lost & Found API", version="0.2.0", lifespan=lifespan)
 
 # Points every kind of failure at the handlers in errors.py, so nothing escapes
 # in FastAPI's default {"detail": "..."} shape.
