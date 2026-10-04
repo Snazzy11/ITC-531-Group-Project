@@ -35,7 +35,7 @@ curl -s -X POST $API/items -H "$JSON" \
 # Mark returned, unmatch, and confirm asymmetry
 curl -s -X PATCH $API/items/1/status -H "$JSON" -d '{"status":"returned"}'
 curl -s -X DELETE $API/matches/1
-curl -s $API/items/1    # still "returned" — unmatching does not resurrect it
+curl -s $API/items/1    # still "returned" - unmatching does not resurrect it
 curl -s $API/items/2    # back to "open"
 
 
