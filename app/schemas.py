@@ -127,13 +127,16 @@ class LocationAdminResponse(LocationResponse):
 
 class UserBase(BaseModel):
     display_name: str = Field(min_length=6, max_length=50)
-    real_name: str = Field(min_length=6, max_length=50)
+    real_name: str = Field(min_length=2, max_length=50)
 
-class UserCreate(UserBase):
+class UserCreate(UserBase): # Currently we will allow anyone to create an account with any access level
     model_config = REQUEST
     password: str = Field(min_length=6, max_length=100)
+    is_admin: bool = Field()
     
 class UserResponse(UserBase):
     model_config = RESPONSE
     
     id: int
+
+# '{"display_name": "string","real_name": "string","password": "string","is_admin": true}'

@@ -39,6 +39,7 @@ class User(Base):
     user_real_name = Column(String(50), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     password_hash = Column(String(255), nullable=False) # TODO change later
+    is_admin = Column(Boolean, nullable=False)
 
     items = relationship("Item", back_populates="user_id_relation")
 
@@ -51,7 +52,8 @@ class Location(Base):
     description = Column(String(500))
     is_active = Column(Boolean, nullable=False, server_default=true())
 
-    items: Mapped[List["Item"]] = relationship(back_populates="items")
+    items: Mapped[List["Item"]] = relationship(back_populates="location")
+
 
 
 class Item(Base):

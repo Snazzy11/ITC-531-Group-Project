@@ -50,9 +50,8 @@ async def attach_request_id(request: Request, call_next):
 Base.metadata.create_all(bind=engine)
 
 
-# --- admin placeholder ------------------------------------------------------
-# Stands in for real auth until user_id lands. Replace this one function and
-# every admin route below follows.
+# admin placeholder
+# Stands in for real auth until implemented.
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "dev-admin-token")
 
 
@@ -302,10 +301,9 @@ def matches_by_item(item_id: int, db: Session = Depends(get_db)):
     return crud.list_matches(db, item_id=item_id)
 
 
-# There is deliberately no PATCH /matches/{id}. Repointing a match at different
-# items is not an edit: the old pair has to be released back to 'open' and the
-# new pair re-validated, which is exactly DELETE + POST. It would also quietly
-# falsify created_at.
+# There is deliberately no PATCH /matches/{id}. Changing a match to use a different
+# items is not just an edit, the old pair must be changed back to 'open' and the
+# new pair validated again, so we use DELETE + POST.
 
 
 @app.delete("/matches/{match_id}", status_code=204, responses=errors.errors(404))
@@ -319,7 +317,7 @@ def delete_match(match_id: int, db: Session = Depends(get_db)):
     return Response(status_code=204)
 
 
-# --- locations --------------------------------------------------------------
+# locations
 
 @app.post(
     "/locations",
@@ -345,9 +343,7 @@ def list_locations(
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
-    """Active locations only by default, which is what the 'post an item'
-    dropdown wants. is_active is included here so an admin screen can tell
-    retired entries apart."""
+    """Active locations only by default."""
     return crud.list_locations(
         db, include_inactive=include_inactive, limit=limit, offset=offset
     )
@@ -462,6 +458,14 @@ def hard_delete_location(location_id: int, db: Session = Depends(get_db)):
 )
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return crud.create_user(db, user)
+
+@app.get( "/users")
+def list_users(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0)
+):
+    return crud.list_users(db, limit=limit, offset=offset)
 
 # meta
 

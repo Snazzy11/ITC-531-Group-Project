@@ -5,12 +5,14 @@ None or an IntegrityError means to a client.
 The one piece of policy that lives here is CLIENT_TRANSITIONS, because it
 describes the item lifecycle rather than any single endpoint.
 """
+import os
 
 from sqlalchemy.orm import Session
 
 from database import models
 import schemas
-from database.models import Item, Match, Location
+from database.models import Item, Match, Location, User
+from hashlib import scrypt
 
 # Transitions a client may ask for directly via PATCH /items/{id}/status.
 # Anything -> MATCHED and MATCHED -> OPEN are system-only: they happen when a
@@ -213,9 +215,19 @@ def delete_location(db: Session, location: models.Location) -> None:
 
 
 # users
-def create_user(db: Session, user: schemas.UserCreate) -> models.Location:
-    row = models.User(**user.model_dump()) # Double check if model dump is usable in this scenario
+def create_user(db: Session, user: schemas.UserCreate) -> User:
+    # Currently we will allow anyone to create an account with any access level
+    row = models.User(
+        user_display_name=user.display_name,
+        user_real_name=user.real_name,
+        is_admin=user.is_admin,
+        password_hash=scrypt(user.password.encode(), salt=os.urandom(16), n=2**10, r=8, p=1).hex() # in prod n >= 2**16
+    )
     db.add(row)
     db.commit()
     db.refresh(row)
     return row
+
+def list_users(db: Session, limit: int = 100, offset: int = 0) -> list[type[User]]:
+    query = db.query(models.User)
+    return query.order_by(models.User.id).limit(limit).offset(offset).all()
