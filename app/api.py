@@ -4,12 +4,13 @@ items, then matches, then locations.
     uvicorn main:app --reload      # docs at http://127.0.0.1:8000/docs
 """
 
+import io
 import logging
 import os
 import uuid
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, Query, Request, Response
+from fastapi import Depends, FastAPI, Header, Query, Request, Response, UploadFile, File
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -20,6 +21,10 @@ from database import models
 import schemas
 from database.database import Base, engine, get_db
 from errors import APIError, register_error_handlers
+import keys
+from ports.storage import Storage
+from storage.s3 import get_storage
+from image_validation import InvalidImage, validate_image
 
 logging.basicConfig(level=logging.INFO)
 
@@ -453,6 +458,59 @@ def hard_delete_location(location_id: int, db: Session = Depends(get_db)):
         ) from None
     return Response(status_code=204)
 
+# --- Storage ----------------------------------------------------------------
+
+@app.post(
+    "/items/{item_id}/images",
+    status_code=201,
+)
+async def upload_image(
+    item_id: int,
+    db: Session = Depends(get_db),
+    storage: Storage = Depends(get_storage),
+    file: UploadFile = File(...),
+) -> dict:
+    # Check item exists first.
+    if crud.get_item(db, item_id) is None:
+        raise HTTPException(status_code=404, detail="item not found")
+
+    original = file.filename or ""
+    body = await file.read()
+
+
+    try:
+        content_type, extension = validate_image(body)
+    except InvalidImage as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    upload_id = keys.new_upload_id()
+    key = keys.pending_key(upload_id, extension)
+
+    storage.put(
+        key,
+        io.BytesIO(body),
+        content_type,
+        {"original-name": original},
+    )
+
+    row = crud.insert_image(
+        db,
+        item_id,
+        upload_id,
+        key,
+        original,
+        content_type,
+        len(body),
+    )
+
+    return {
+        "id": row.id,
+        "upload_id": row.upload_id,
+        "pending_key": row.pending_key,
+        "original_name": row.original_name,
+        "content_type": row.content_type,
+        "size_bytes": row.size_bytes,
+    }
 
 # --- meta -------------------------------------------------------------------
 
