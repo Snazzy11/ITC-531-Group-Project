@@ -1,5 +1,6 @@
 import enum
 import uuid
+from typing import List
 
 from sqlalchemy import (
     Boolean,
@@ -14,7 +15,7 @@ from sqlalchemy import (
     and_,
     true,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy.sql import func
 
 from database.database import Base
@@ -26,11 +27,11 @@ class ItemType(enum.IntEnum):
 
 
 class ItemStatus(str, enum.Enum):
-    OPEN = "open"
-    MATCHED = "matched"
-    RETURNED = "returned"
-    WITHDRAWN = "withdrawn"
-    EXPIRED = "expired"
+    OPEN = "open" # Fully unmatched item; also for items with proposed but unclaimed matches
+    MATCHED = "matched" # Matched to another item
+    RETURNED = "returned" # Matched and returned to use
+    WITHDRAWN = "withdrawn" # Removed from application by the user, for any reason
+    EXPIRED = "expired" # Stale for too long
 
 
 class ImageStatus(str, enum.Enum):
@@ -38,6 +39,18 @@ class ImageStatus(str, enum.Enum):
     PROCESSING = "processing"
     READY = "ready"
     REJECTED = "rejected"
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    user_display_name = Column(String(50), nullable=False, unique=True)
+    user_real_name = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    password_hash = Column(String(255), nullable=False) # TODO change later
+    is_admin = Column(Boolean, nullable=False)
+
+    items = relationship("Item", back_populates="user_id_relation")
 
 
 class Location(Base):
@@ -49,7 +62,8 @@ class Location(Base):
     description = Column(String(500))
     is_active = Column(Boolean, nullable=False, server_default=true())
 
-    items = relationship("Item", back_populates="location", passive_deletes="all")
+    items: Mapped[List["Item"]] = relationship(back_populates="location")
+
 
 
 class Item(Base):
@@ -82,10 +96,18 @@ class Item(Base):
         nullable=False,
         index=True,
     )
-    # user_id = Column(Integer) # would be a foreign key later on
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
     location = relationship("Location", back_populates="items")
+
+    # user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    user_id_relation: Mapped["User"] = relationship(back_populates="items")
+
     # Only a processed image is ever shown; the worker keeps at most one per item.
     photo = relationship(
         "Image",

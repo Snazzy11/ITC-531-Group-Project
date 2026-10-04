@@ -5,11 +5,14 @@ None or an IntegrityError means to a client.
 The one piece of policy that lives here is CLIENT_TRANSITIONS, because it
 describes the item lifecycle rather than any single endpoint.
 """
+import os
 
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from database import models
 import schemas
+from database.models import Item, Match, Location, User
+from hashlib import scrypt
 
 # Transitions a client may ask for directly via PATCH /items/{id}/status.
 # Anything -> MATCHED and MATCHED -> OPEN are system-only: they happen when a
@@ -31,7 +34,7 @@ EDITABLE_STATUSES = {
 }
 
 
-# --- items ------------------------------------------------------------------
+# items
 
 def create_item(db: Session, item: schemas.ItemCreate) -> models.Item:
     # status is not passed: the column defaults to 'open'.
@@ -42,7 +45,7 @@ def create_item(db: Session, item: schemas.ItemCreate) -> models.Item:
     return row
 
 
-def get_item(db: Session, item_id: int) -> models.Item | None:
+def get_item(db: Session, item_id: int) -> type[Item] | None:
     return db.query(models.Item).filter(models.Item.id == item_id).first()
 
 
@@ -55,7 +58,7 @@ def list_items(
     include_withdrawn: bool = False,
     limit: int = 20,
     offset: int = 0,
-) -> list[models.Item]:
+) -> list[type[Item]]:
     query = db.query(models.Item)
 
     if type is not None:
@@ -109,7 +112,7 @@ def delete_item(db: Session, item: models.Item) -> None:
     db.commit()
 
 
-# --- matches ----------------------------------------------------------------
+# matches
 
 def create_match(db: Session, lost: models.Item, found: models.Item) -> models.Match:
     """Creates the pair and moves both items to 'matched' in one transaction,
@@ -129,7 +132,7 @@ def get_match(db: Session, match_id: int) -> models.Match | None:
 
 def list_matches(
     db: Session, item_id: int | None = None, limit: int = 20, offset: int = 0
-) -> list[models.Match]:
+) -> list[type[Match]]:
     query = db.query(models.Match)
 
     if item_id is not None:
@@ -156,7 +159,7 @@ def delete_match(db: Session, match: models.Match) -> None:
     db.commit()
 
 
-# --- locations --------------------------------------------------------------
+# locations
 
 def create_location(db: Session, location: schemas.LocationCreate) -> models.Location:
     row = models.Location(**location.model_dump())
@@ -166,13 +169,13 @@ def create_location(db: Session, location: schemas.LocationCreate) -> models.Loc
     return row
 
 
-def get_location(db: Session, location_id: int) -> models.Location | None:
+def get_location(db: Session, location_id: int) -> type[Location] | None:
     return db.query(models.Location).filter(models.Location.id == location_id).first()
 
 
 def list_locations(
     db: Session, include_inactive: bool = False, limit: int = 100, offset: int = 0
-) -> list[models.Location]:
+) -> list[type[Location]]:
     query = db.query(models.Location)
 
     if not include_inactive:
@@ -210,7 +213,8 @@ def delete_location(db: Session, location: models.Location) -> None:
     db.delete(location)
     db.commit()
 
-# --- images -----------------------------------------------------------------
+
+# images
 
 def create_image(db: Session, item: models.Item) -> models.Image:
     # upload_id and status come from the column defaults.
@@ -276,3 +280,24 @@ def mark_image_ready(
     image.processed_at = datetime.now(timezone.utc)
     db.commit()
     return replaced_keys
+
+
+# users
+
+def create_user(db: Session, user: schemas.UserCreate) -> User:
+    # Currently we will allow anyone to create an account with any access level
+    row = models.User(
+        user_display_name=user.display_name,
+        user_real_name=user.real_name,
+        is_admin=user.is_admin,
+        password_hash=scrypt(user.password.encode(), salt=os.urandom(16), n=2**10, r=8, p=1).hex() # in prod n >= 2**16
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def list_users(db: Session, limit: int = 100, offset: int = 0) -> list[type[User]]:
+    query = db.query(models.User)
+    return query.order_by(models.User.id).limit(limit).offset(offset).all()

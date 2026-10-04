@@ -25,9 +25,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from database.models import ImageStatus, ItemStatus
 
 REQUEST = ConfigDict(extra="forbid", str_strip_whitespace=True)
+RESPONSE = model_config = ConfigDict(from_attributes=True)
 
 
-# --- items ------------------------------------------------------------------
+
+# items
 
 class ItemBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -59,7 +61,7 @@ class ItemStatusUpdate(BaseModel):
 
 
 class ItemResponse(ItemBase):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = RESPONSE
 
     id: int
     type: Literal[0, 1]
@@ -69,7 +71,7 @@ class ItemResponse(ItemBase):
     photo_url: str | None = None
 
 
-# --- matches ----------------------------------------------------------------
+# matches
 
 class MatchCreate(BaseModel):
     model_config = REQUEST
@@ -79,7 +81,7 @@ class MatchCreate(BaseModel):
 
 
 class MatchResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = RESPONSE
 
     id: int
     lost_item_id: int
@@ -87,7 +89,7 @@ class MatchResponse(BaseModel):
     created_at: datetime
 
 
-# --- locations --------------------------------------------------------------
+# locations
 
 class LocationBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -111,7 +113,7 @@ class LocationResponse(LocationBase):
     """`is_active` is omitted: it only governs whether a location can be picked
     for a new post, and retired locations still appear on old posts."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = RESPONSE
 
     id: int
 
@@ -123,10 +125,10 @@ class LocationAdminResponse(LocationResponse):
     is_active: bool
 
 
-# --- images -----------------------------------------------------------------
+# images
 
 class ImageResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = RESPONSE
 
     upload_id: str
     status: ImageStatus
@@ -139,3 +141,22 @@ class ImageUploadResponse(ImageResponse):
 
     upload_url: str
     expires_in: int
+
+
+# users
+
+class UserBase(BaseModel):
+    display_name: str = Field(min_length=6, max_length=50)
+    real_name: str = Field(min_length=2, max_length=50)
+
+class UserCreate(UserBase): # Currently we will allow anyone to create an account with any access level
+    model_config = REQUEST
+    password: str = Field(min_length=6, max_length=100)
+    is_admin: bool = Field()
+    
+class UserResponse(UserBase):
+    model_config = RESPONSE
+    
+    id: int
+
+# '{"display_name": "string","real_name": "string","password": "string","is_admin": true}'
