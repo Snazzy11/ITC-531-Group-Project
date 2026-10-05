@@ -1,9 +1,7 @@
 # Provider shortlist
 
-Candidates were assessed against the capability contract (C1–C6): Parker
-Scott assessed AWS and Cloudflare, and Doug Varney assessed AWS and Azure.
-This is documentation research only; no account was created. Every URL is
-also in `sources.md`.
+Candidates were assessed against the capability contract (C1–C6): Parker looked at AWS and Cloudflare, and Doug used AWS and Azure.
+URLs are also in `sources.md`.
 
 | Candidate | Assessed by | C1 | C2 | C3 | C4 | C5 | C6 |
 |---|---|---|---|---|---|---|---|
@@ -16,26 +14,23 @@ also in `sources.md`.
 Assessed by both members. The pooled verdict is in the first column of
 verdicts; where the two disagreed, both are shown.
 
-| Clause | Pooled verdict | Parker | Doug | Evidence | URL | Date read |
-|---|---|---|---|---|---|---|
-| C1 runs OCI image, HTTPS URL | Partially meets | Partially meets | Meets | EC2 can run a container, but the page does not say it deploys an image and returns an HTTPS URL. | https://aws.amazon.com/ec2/ | 2026-10-04 |
+| Clause | Pooled verdict | Parker | Doug | Evidence                                                                                                                                                                             | URL | Date read |
+|---|---|---|---|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|---|
+| C1 runs OCI image, HTTPS URL | Partially meets | Partially meets | Meets | EC2 can run a container, but the page does not explicitly say it deploys an image and returns an HTTPS URL| https://aws.amazon.com/ec2/ | 2026-10-04 |
 | C2 S3-compatible, SigV4 | Meets | Meets | Meets | S3 authenticates requests with SigV4, including presigned URLs signed in the query string. | https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html | 2026-10-05 |
 | C3 scoped credentials | Meets | Meets | Meets | IAM roles can give temporary, scoped credentials. | https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html | 2026-10-04 |
-| C4 list + delete from a script | Meets | Meets | Possibly meets | The AWS CLI is a documented way to script this. | https://docs.aws.amazon.com/cli/latest/ | 2026-10-04 |
-| C5 spend alert / hard cap | Meets | Meets | Meets | Spend limits and notifications can be set. | https://docs.aws.amazon.com/accounts/latest/reference/create-spend-limit.html | 2026-10-04 |
-| C6 free allowance or < $5 | Meets | Partially meets | Meets | New customers get 5 GB of S3 Standard storage and 100 GB a month of data transfer out, plus up to $200 in credits on a free plan that lasts up to 6 months. Time-limited, not perpetual. | https://aws.amazon.com/free/free-tier-faqs/ and https://aws.amazon.com/s3/pricing/ | 2026-10-05 |
+| C4 list + delete from a script | Meets | Meets | Possibly meets | The AWS CLI is a documented way to script this.                                                                                                                                      | https://docs.aws.amazon.com/cli/latest/ | 2026-10-04 |
+| C5 spend alert / hard cap | Meets | Meets | Meets | Spend limits and notifications can be set.                                                                                                                                           | https://docs.aws.amazon.com/accounts/latest/reference/create-spend-limit.html | 2026-10-04 |
+| C6 free allowance or < $5 | Meets | Partially meets | Meets | New customers get 5 GB of S3 Standard storage and 100 GB a month of data transfer out, plus up to $200 in credits on a free plan that lasts up to 6 months | https://aws.amazon.com/free/free-tier-faqs/ and https://aws.amazon.com/s3/pricing/ | 2026-10-05 |
 
-**Where we disagreed, and who was right.**
+**Disagreements**
 
-- **C1:** Parker was right. Both verdicts rest on the same general EC2 page, and
-  that page does not say it deploys an image and returns an HTTPS URL, so it
-  cannot support "meets".
-- **C4:** Parker was right. He cited the AWS CLI documentation; Doug found no
-  source and marked it "possibly".
-- **C6:** Doug was right. His 5 GB figure first came from a third-party blog,
+- **C1:** Parker was right. Since the cited page does not explicitly say it deploys 
+  an image and returns an HTTPS URL, it cannot fully say it "meets"
+- **C4:** Parker was right. Doug couldnt find a source, but since parker did it overrides
+- **C6:** Doug was right. The 5GB figure came from a blog and not AWS offically,
   but AWS's own pages confirm it. Parker was right that the allowance is
-  time-limited, but Modules 6 to 8 fit well inside it, so it still meets the
-  clause.
+  time-limited, but it still meets the clause.
 
 For C2 and C6 the pooled rows cite AWS's own pages, read on 2026-10-05. They
 replace the sources we first used: SigV4 documentation for a different AWS
@@ -45,14 +40,14 @@ service (MediaTailor), and the third-party blog.
 
 Assessed by Parker.
 
-| Clause | Verdict | Evidence | URL | Date read |
-|---|---|---|---|---|
-| C1 runs OCI image, HTTPS URL | Meets | Cloudflare has options to deploy containers directly. | https://developers.cloudflare.com/containers/ | 2026-10-04 |
-| C2 S3-compatible, SigV4 | Meets | The R2 service hosts S3-compatible storage. | https://developers.cloudflare.com/r2/ | 2026-10-04 |
-| C3 scoped credentials | Meets | R2 can issue temporary credentials for a chosen scope. | https://developers.cloudflare.com/r2/api/s3/temporary-credentials/ | 2026-10-04 |
-| C4 list + delete from a script | Cannot determine | The page found covers running commands in a sandbox, not listing or deleting R2 objects. | no primary source found | 2026-10-04 |
-| C5 spend alert / hard cap | Cannot determine | The pricing page says you are only charged when free limits are exceeded, but no documented spend alert or hard cap was found. | https://developers.cloudflare.com/r2/pricing/ | 2026-10-04 |
-| C6 free allowance or < $5 | Meets | R2 pricing lists a free tier that appears indefinite. | https://developers.cloudflare.com/r2/pricing/ | 2026-10-04 |
+| Clause | Verdict | Evidence                                                                                                                             | URL | Date read |
+|---|---|--------------------------------------------------------------------------------------------------------------------------------------|---|---|
+| C1 runs OCI image, HTTPS URL | Meets | Cloudflare has options to deploy containers directly.                                                                                | https://developers.cloudflare.com/containers/ | 2026-10-04 |
+| C2 S3-compatible, SigV4 | Meets | The R2 service hosts S3-compatible storage.                                                                                          | https://developers.cloudflare.com/r2/ | 2026-10-04 |
+| C3 scoped credentials | Meets | R2 can issue temporary credentials for a chosen scope.                                                                               | https://developers.cloudflare.com/r2/api/s3/temporary-credentials/ | 2026-10-04 |
+| C4 list + delete from a script | Cannot determine | We found things about _running_ commands in a sandbox, but not listing or deleting objects.                                          | no source found | 2026-10-04 |
+| C5 spend alert / hard cap | Cannot determine | The pricing page says you are only charged when free limits are exceeded, but no information about spend alert or hard cap was found | https://developers.cloudflare.com/r2/pricing/ | 2026-10-04 |
+| C6 free allowance or < $5 | Meets | R2 pricing lists a free tier that appears indefinite.                                                                                | https://developers.cloudflare.com/r2/pricing/ | 2026-10-04 |
 
 ## Microsoft Azure (Blob Storage)
 
@@ -69,8 +64,7 @@ Assessed by Doug.
 
 ## Team decision
 
-**We choose AWS, with Cloudflare as the named fallback.** Our needs are
-modest and specific:
+**We choose AWS, with Cloudflare as the fallback.**
 - **Storage volume.** Milestone 3 estimated about 4,800 photo uploads a month
   at most. Each is re-encoded to a JPEG of at most 1280px, so stored volume
   grows by roughly a gigabyte or two a month, plus small user files. Any
