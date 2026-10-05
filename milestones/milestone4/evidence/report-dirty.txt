@@ -11,7 +11,7 @@ HTTP 200
 $ $DC exec -T db psql -U seekr -d seekr -c "DELETE FROM files WHERE id = 2 RETURNING key"
                           key                           
 --------------------------------------------------------
- users/2/files/0d1c62a1-a342-4de7-bfb9-b9ce4f194013.pdf
+ users/2/files/b7cc6306-04bf-4590-a2a8-b7bb359ee412.pdf
 (1 row)
 
 DELETE 1
@@ -20,12 +20,12 @@ $ $DC exec -T app python - < scripts/storage_report.py; echo "exit=$?"
 Storage report: bucket=seekr-images prefix='' objects=5 indexed=3 in_flight=1
 
 Unstamped objects (no upload-id): 1
-  uploads/pending/5e7ac6b1-f2cb-4e18-9777-8a1c194ced33
+  uploads/pending/ff3395a5-308f-458c-a06f-1ab444ab689d
 
 Off-scheme keys: 0
 
 Objects with no row: 1
-  users/2/files/0d1c62a1-a342-4de7-bfb9-b9ce4f194013.pdf
+  users/2/files/b7cc6306-04bf-4590-a2a8-b7bb359ee412.pdf
 
 Rows with no object: 0
 
