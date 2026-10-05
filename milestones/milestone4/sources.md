@@ -1,7 +1,7 @@
 # Sources
 
-Every URL cited in this milestone, the date it was read, and who read it. No
-account was created to read any of them.
+Every URL we cited for this milestone, when it was read, and who read it. 
+We didn't need an account for any of them, but we started the process to get a better idea of some of the details.
 
 ## AWS (`PROVIDER_SHORTLIST.md`)
 
@@ -36,10 +36,11 @@ account was created to read any of them.
 | https://learn.microsoft.com/en-us/azure/storage/common/storage-plan-manage-costs#monitor-costs | C5 | 2026-10-04 | Doug Varney |
 | https://azure.microsoft.com/en-us/pricing/offers/ms-azr-0044p/ | C6 | 2026-10-04 | Doug Varney |
 
-## Egress (`COST_AND_RISK.md`)
+## Egress and storage classes (`COST_AND_RISK.md`)
 
 | URL | Used for | Date read | Read by |
 |---|---|---|---|
 | https://aws.amazon.com/s3/pricing/ | AWS egress price and allowance | 2026-10-05 | Parker Scott |
+| https://aws.amazon.com/s3/pricing/ | S3 Standard, Standard-IA and Intelligent-Tiering prices for the storage class math | 2026-10-05 | Parker Scott |
 | https://developers.cloudflare.com/r2/pricing/ | Cloudflare egress price and allowance | 2026-10-05 | Parker Scott |
 | https://azure.microsoft.com/en-us/pricing/details/bandwidth/ | Azure egress price and allowance | 2026-10-05 | Parker Scott |

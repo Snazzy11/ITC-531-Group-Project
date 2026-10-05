@@ -1,11 +1,11 @@
-"""Files uploaded through the API: proof of ownership a user keeps on hand for
-claiming an item, such as a receipt or a photo of a serial number.
+"""File endpoints. These are files a user keeps as proof of ownership when
+claiming an item, like a receipt or a photo of a serial number.
 
-Unlike item photos, these bytes pass through the API, so every check runs
-before anything is written to the store or the database. Writes go to the
-store first and the index second; deletes go the other way. Either way a
-partial failure leaves an object with no row, never a row pointing at
-nothing. See milestones/milestone4/STORAGE_DESIGN.md.
+Unlike item photos these go through the API, so all the checks happen before
+anything is written. Uploads write to the store first and then the database,
+and deletes do the opposite, so if something fails partway we end up with an
+extra object and not a row pointing at nothing. More detail is in
+milestones/milestone4/STORAGE_DESIGN.md.
 """
 
 import logging
@@ -29,8 +29,8 @@ log = logging.getLogger("lostfound")
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_FILES = 5
 
-# What `file -k` finds in the bytes -> the extension the key gets. HTML, SVG
-# and anything else a browser would execute from a presigned URL is absent.
+# type detected by `file -k` -> extension used in the key
+# (no html/svg or anything else a browser would run)
 ALLOWED_TYPES = {
     "image/jpeg": "jpg",
     "image/png": "png",
@@ -60,8 +60,7 @@ def check(upload: UploadFile) -> tuple[bytes, str]:
 
 
 def display_name(filename: str | None) -> str:
-    """The client's filename, for showing back and searching only. It never
-    becomes part of a key."""
+    """Cleans up the client's filename. Only used for display and search, never in a key."""
     name = (filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
     return name[:255] or "unnamed"
 
@@ -71,7 +70,7 @@ def discard(keys: list[str]) -> None:
         try:
             storage.delete(key)
         except Exception:
-            # Unreferenced and private; scripts/storage_report.py finds it.
+            # not a big deal, the storage report will find it
             log.exception("could not remove %s after a failed upload", key)
 
 
@@ -186,7 +185,7 @@ def delete_file(file_id: int, db: Session = Depends(get_db)):
         raise APIError(404, errors.FILE_NOT_FOUND, "file not found")
     key = row.key
     crud.delete_file(db, row)
-    # The row is gone, so a failure here leaves an unreferenced object, not a
-    # broken file; the client still gets its 204.
+    # row is already gone, so if this fails it just leaves an extra object
+    # (the storage report finds those). Still return 204.
     discard([key])
     return Response(status_code=204)

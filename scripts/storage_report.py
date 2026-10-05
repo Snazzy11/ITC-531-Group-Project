@@ -1,17 +1,16 @@
-"""Storage report: every object in the bucket, checked against our key scheme,
-our stamp, and the database index.
+"""Storage report. Lists every object in the bucket and checks it against our
+key scheme, the upload-id stamp, and the database.
 
-Adapted from Parker Scott's homework Part 3 script: the same unstamped,
-off-scheme and bytes-by-prefix passes and exit codes, moved onto this app's
-storage port and key scheme, plus a pass over the database index.
+Based on Parker's homework Part 3 script (same unstamped, off-scheme and
+bytes-by-prefix checks and exit codes), changed to use our storage port and key
+scheme, and with an extra check against the database.
 
-It runs inside the app container, so it gets exactly the app's environment:
+Run it inside the app container so it has the same env as the app:
 
     docker compose --env-file .env.local exec -T app python - < scripts/storage_report.py
     docker compose --env-file .env.local exec -T app python - --prefix users/ < scripts/storage_report.py
 
-Exit codes: 0 clean, 1 something was found, 2 the report could not run (an
-unreachable store or database is never reported as a clean bucket).
+Exit codes: 0 = clean, 1 = found issue, 2 = couldn't run due to error
 """
 
 import argparse
@@ -25,8 +24,8 @@ from database.database import SessionLocal
 from database.models import File, Image, ImageStatus
 from ports import storage
 
-UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-SCHEME = re.compile(
+UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" # UUID regex
+SCHEME = re.compile( # strings are "raw" for regex
     rf"uploads/pending/{UUID}"
     rf"|items/\d+/{UUID}/photo\.jpg"
     rf"|users/\d+/files/{UUID}\.(jpg|png|webp|heic|pdf)"
@@ -34,9 +33,9 @@ SCHEME = re.compile(
 
 
 def index(db) -> tuple[set[str], set[str]]:
-    """Keys the database says must exist, and pending keys it expects might:
-    an upload link that has been issued but not used yet has a row and, for
-    now, no object."""
+    """Returns the keys the database says should exist, and the pending keys
+    that might exist (an upload link that hasn't been used yet has a row but no
+    object yet)."""
     required = {key for (key,) in db.query(File.key)}
     required |= {
         key

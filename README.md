@@ -59,10 +59,10 @@ With the stack running:
   ```
 
 # Design docs
-- `milestones/milestone4/architecture-diagram.png` — the services, the store, and the presigned path
-- `docs/Error Contract.md` — response envelope, status codes, error codes
-- `docs/MESSAGE_ARCHITECTURE.md` — queues, events, and the workers that consume them
-- `milestones/milestone4/STORAGE_DESIGN.md` — photo and file uploads, key scheme, content types, write order
+- `milestones/milestone4/Architecture.drawio.html` - the services, the store, and the presigned path
+- `docs/Error Contract.md` - response envelope, status codes, error codes
+- `docs/MESSAGE_ARCHITECTURE.md` - queues, events, and the workers that consume them
+- `milestones/milestone4/STORAGE_DESIGN.md` - photo and file uploads, key scheme, content types, write order
 
 # Contributing Code
 

@@ -11,8 +11,8 @@ URLs are also in `sources.md`.
 
 ## Amazon Web Services (AWS)
 
-Assessed by both members. The pooled verdict is in the first column of
-verdicts; where the two disagreed, both are shown.
+We both looked at AWS. The first verdict column is the one we agreed on, and the next two are what each
+of us found on our own.
 
 | Clause | Pooled verdict | Parker | Doug | Evidence                                                                                                                                                                             | URL | Date read |
 |---|---|---|---|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|---|
@@ -32,13 +32,12 @@ verdicts; where the two disagreed, both are shown.
   but AWS's own pages confirm it. Parker was right that the allowance is
   time-limited, but it still meets the clause.
 
-For C2 and C6 the pooled rows cite AWS's own pages, read on 2026-10-05. They
-replace the sources we first used: SigV4 documentation for a different AWS
-service (MediaTailor), and the third-party blog.
+For C2 and C6 we switched to AWS's own pages (read on 2026-10-05). At first we had used SigV4 docs for a 
+different AWS service (MediaTailor) and the third-party blog.
 
 ## Cloudflare
 
-Assessed by Parker.
+Parker looked at Cloudflare.
 
 | Clause | Verdict | Evidence                                                                                                                             | URL | Date read |
 |---|---|--------------------------------------------------------------------------------------------------------------------------------------|---|---|
@@ -51,7 +50,7 @@ Assessed by Parker.
 
 ## Microsoft Azure (Blob Storage)
 
-Assessed by Doug.
+Doug looked at Azure.
 
 | Clause | Verdict | Evidence | URL | Date read |
 |---|---|---|---|---|
@@ -64,53 +63,28 @@ Assessed by Doug.
 
 ## Team decision
 
-**We choose AWS, with Cloudflare as the fallback.**
-- **Storage volume.** Milestone 3 estimated about 4,800 photo uploads a month
-  at most. Each is re-encoded to a JPEG of at most 1280px, so stored volume
-  grows by roughly a gigabyte or two a month, plus small user files. Any
-  candidate's allowance or a few dollars covers that, so storage price does not
-  decide this.
-- **Presigned uploads.** The photo flow depends on SigV4 presigned PUT and GET
-  URLs against an S3 endpoint. That makes C2 a hard requirement, and the
-  storage port speaks only S3.
-- **Store events.** We do not need them. Reconciliation is a completion
-  callback, so a provider's event notifications do not affect the choice.
-- **Egress.** Photo downloads through presigned GETs are our main outbound
-  traffic, about 72 GB a month at our estimate (`COST_AND_RISK.md`). That is
-  free on all three: AWS and Azure each include 100 GB a month, and Cloudflare
-  charges nothing for egress. Past 100 GB, AWS charges $0.09 per GB, so egress
-  is what would most likely change our choice.
+**We choose AWS, with Cloudflare as the fallback.** What our app actually needs is pretty small:
 
-AWS meets C2 through C6 on the evidence we have, runs the `boto3` code we
-already wrote unchanged, and has a documented spend alert we can set before
-Module 6 creates anything.
+- **Storage volume.** In Milestone 3 we estimated around 4,800 photo uploads a month at most. Each one gets re-encoded to a JPEG of at most 1280px, so storage only grows by a gigabyte or two a month, plus some small user files. Any of the free allowances (or a few dollars) covers that, so storage price didn't really decide anything.
+- **Presigned uploads.** The photo flow depends on SigV4 presigned PUT and GET URLs against an S3 endpoint, and our storage port only speaks S3. So C2 is a hard requirement for us.
+- **Store events.** We don't need them. We do reconciliation with a completion callback, so whether a provider has event notifications doesn't matter.
+- **Egress.** Photo downloads through presigned GETs are most of our outbound traffic, around 72 GB a month by our estimate (see `COST_AND_RISK.md`). That's free on all three since AWS and Azure both include 100 GB a month and Cloudflare doesn't charge for egress at all. Past 100 GB AWS charges $0.09 per GB, so egress is the most likely thing to change our choice.
 
-**Rejected: Azure, on C2.** Blob Storage has no S3-compatible endpoint, so our
-storage port and presigned SigV4 URLs would not work against it without a
-rewrite. It therefore cannot be our fallback, even though it passes every
-other clause.
+AWS meets C2 through C6 from what we found, runs the `boto3` code we already wrote without changes, and has a documented spend alert we can set up before Module 6 creates anything.
 
-**Fallback: Cloudflare.** It passes C2, so moving would mean changing
-environment variables, not code. It is not our first choice because of C5: we
-found no documented spend alert or hard cap, and we want that assurance before
-anything is created. C4 is also undetermined.
+**Rejected: Azure, because of C2.** Blob Storage doesn't have an S3-compatible endpoint, so our storage port and presigned URLs wouldn't work with it without a rewrite. Even though it passes every other clause, it can't be our fallback either.
 
-**What would make us switch, and who is watching.** We would move to
-Cloudflare if any of these happens:
-- Our AWS spend alert fires once the time-limited free tier ends.
-- Photo egress passes 100 GB a month. Every 100 GB after that is $9 on AWS
-  and $0 on Cloudflare.
-- Cloudflare documents a spend alert or hard cap (C5), since its free tier
-  appears perpetual.
+**Fallback: Cloudflare.** It passes C2, so switching would just mean changing environment variables, not code. It's not our first pick because of C5, since we couldn't find a documented spend alert or hard cap and we want that before we create anything. C4 is also still undetermined.
 
-Parker watches all three. He sets the AWS spend alert before Module 6 and
-re-reads both pricing pages at the same time.
+**What would make us switch.** We would move to Cloudflare if:
+- our AWS spend alert goes off after the free tier ends
+- photo egress goes over 100 GB a month (every 100 GB after that is $9 on AWS and $0 on Cloudflare)
+- Cloudflare documents a spend alert or hard cap (C5), since their free tier looks permanent
+
+Parker is watching for all three. He'll set the AWS spend alert before Module 6 and re-read both pricing pages then.
 
 ## Route B
 
-No member has asked for Route B, so no request has been made, and the team
-plans to take the standard route in Module 6.
+Nobody on our team needs Route B, so we haven't made a request and we're planning on the standard route for Module 6.
 
-One defect to report: the milestone points to
-`reference/route-b-local-equivalence.md`, but that file is not in the course
-materials available to us.
+Something to report: the milestone links to `reference/route-b-local-equivalence.md`, but that file isn't in the course materials we have.

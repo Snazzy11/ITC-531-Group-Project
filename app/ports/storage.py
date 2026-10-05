@@ -1,18 +1,16 @@
-"""The storage port: the only module that talks to the object store. Key
-layout is in milestones/milestone4/STORAGE_DESIGN.md.
+"""Storage port. This is the only module that should talk to the object store.
+Key layout is explained in milestones/milestone4/STORAGE_DESIGN.md.
 
-The endpoint, bucket, region and credentials all come from the environment
-(S3_ENDPOINT_URL, S3_BUCKET, AWS_DEFAULT_REGION, AWS_ACCESS_KEY_ID,
-AWS_SECRET_ACCESS_KEY), so the same code runs against any S3-compatible store.
+Endpoint, bucket, region and credentials all come from env vars (S3_ENDPOINT_URL,
+S3_BUCKET, AWS_DEFAULT_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) so this
+works with any S3-compatible store.
 
-Presigned URLs are signed against S3_PUBLIC_ENDPOINT_URL because the client
-uses them, not this container, and the host is part of the signature. Every
-other call goes to S3_ENDPOINT_URL. When the app and its clients reach the
-store at the same address, leave S3_PUBLIC_ENDPOINT_URL unset.
+Presigned URLs are signed with S3_PUBLIC_ENDPOINT_URL since the client is the one
+using them and the host is part of the signature. Everything else uses
+S3_ENDPOINT_URL. If both are the same address just leave the public one unset.
 
-Every object written through write() is stamped with upload-id metadata. The
-only objects without it are ones a client PUT to a presigned URL, which is how
-scripts/storage_report.py tells them apart.
+write() adds upload-id metadata to every object. Objects from a client's presigned
+PUT won't have it, and the storage report uses that to find them.
 """
 
 import os
@@ -124,8 +122,8 @@ def metadata(key: str) -> dict[str, str] | None:
 
 
 def read(key: str, limit: int) -> bytes | None:
-    """Reads at most limit + 1 bytes, so the caller can tell the object is too
-    big without downloading all of it. None if there is no such object."""
+    """Reads up to limit + 1 bytes so the caller can tell if the object is too
+    big without downloading the whole thing. Returns None if it doesn't exist."""
     try:
         response = _internal().get_object(Bucket=_bucket(), Key=key)
     except ClientError as exc:
@@ -143,8 +141,7 @@ def write(
     upload_id: str,
     original_name: str | None = None,
 ) -> None:
-    # Metadata travels as HTTP headers, which must be ASCII, so the name is
-    # percent-encoded.
+    # metadata gets sent as HTTP headers which have to be ASCII, so encode the name
     stamp = {STAMP: upload_id}
     if original_name is not None:
         stamp["original-name"] = quote(original_name)
@@ -173,10 +170,10 @@ def delete_prefix(prefix: str) -> None:
 
 
 def empty_bucket() -> int:
-    """Deletes every version of every object and every delete marker, and
-    returns how many it removed. list_objects_v2 only sees current versions:
-    on a versioned bucket it can come back empty while old versions are still
-    stored and billed, and the bucket still refuses to be deleted."""
+    """Deletes every version and delete marker in the bucket and returns how
+    many were removed. We can't use list_objects_v2 here because it only shows
+    current versions, so on a versioned bucket it can look empty when old
+    versions are still there (and still billed)."""
     removed = 0
     pages = _internal().get_paginator("list_object_versions").paginate(Bucket=_bucket())
     for page in pages:
