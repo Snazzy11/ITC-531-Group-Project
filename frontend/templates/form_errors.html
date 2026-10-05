@@ -1,0 +1,8 @@
+{% if form_error %}
+  <div class="form-error" role="alert">
+    <p>{{ form_error }}</p>
+    {% for field, message in field_errors.items() %}
+      <p>{{ field.replace('_', ' ')|capitalize }}: {{ message }}</p>
+    {% endfor %}
+  </div>
+{% endif %}
