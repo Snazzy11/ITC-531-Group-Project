@@ -145,6 +145,20 @@ class ImageUploadResponse(ImageResponse):
     expires_in: int
 
 
+# files
+
+class FileResponse(BaseModel):
+    model_config = RESPONSE
+
+    id: int
+    user_id: int
+    key: str
+    original_filename: str
+    content_type: str
+    size_bytes: int
+    uploaded_at: datetime
+
+
 # users
 
 class UserBase(BaseModel):

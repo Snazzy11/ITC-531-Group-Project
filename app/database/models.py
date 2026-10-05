@@ -176,6 +176,27 @@ class Image(Base):
     processed_at = Column(DateTime(timezone=True))
 
 
+class File(Base):
+    """The index of every object uploaded through /files. The store can only
+    list by prefix, so filtering by type or name has to happen here."""
+
+    __tablename__ = "files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    key = Column(String(255), nullable=False, unique=True)
+    original_filename = Column(String(255), nullable=False)
+    # What `file -k` found in the bytes, never what the client claimed.
+    content_type = Column(String(100), nullable=False, index=True)
+    size_bytes = Column(Integer, nullable=False)
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class Match(Base):
     __tablename__ = "matches"
     __table_args__ = (

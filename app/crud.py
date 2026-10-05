@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from database import models
 import schemas
-from database.models import Item, Match, Location, User
+from database.models import File, Item, Match, Location, User
 from hashlib import scrypt
 
 # Transitions a client may ask for directly via PATCH /items/{id}/status.
@@ -280,6 +280,54 @@ def mark_image_ready(
     image.processed_at = datetime.now(timezone.utc)
     db.commit()
     return replaced_keys
+
+
+# files
+
+def add_files(db: Session, rows: list[models.File]) -> list[models.File]:
+    """One transaction for the whole batch, so a multi-file upload is indexed
+    all or not at all."""
+    db.add_all(rows)
+    db.commit()
+    for row in rows:
+        db.refresh(row)
+    return rows
+
+
+def get_file(db: Session, file_id: int) -> File | None:
+    return db.query(models.File).filter(models.File.id == file_id).first()
+
+
+def list_files(
+    db: Session,
+    user_id: int | None = None,
+    content_type: str | None = None,
+    name: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[type[File]]:
+    query = db.query(models.File)
+
+    if user_id is not None:
+        query = query.filter(models.File.user_id == user_id)
+
+    if content_type:
+        query = query.filter(models.File.content_type == content_type)
+
+    if name:
+        query = query.filter(models.File.original_filename.ilike(f"%{name}%"))
+
+    return (
+        query.order_by(models.File.uploaded_at.desc(), models.File.id.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+
+def delete_file(db: Session, row: models.File) -> None:
+    db.delete(row)
+    db.commit()
 
 
 # users

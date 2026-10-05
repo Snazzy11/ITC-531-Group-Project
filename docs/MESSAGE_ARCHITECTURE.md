@@ -32,7 +32,7 @@ Both workers check the message and acknowledge it when they are done. An
 acknowledgment tells RabbitMQ it can remove the message. `matching_worker` only
 logs the job; matching is not implemented yet. `image_worker` checks and
 re-encodes the upload and records the result in Postgres (see
-`STORAGE_DESIGN.md`). A rejected upload is still acknowledged, since retrying it
+`milestones/milestone4/STORAGE_DESIGN.md`). A rejected upload is still acknowledged, since retrying it
 would give the same result.
 
 Item IDs must be positive integers. `image_ref` must be a string that is not empty

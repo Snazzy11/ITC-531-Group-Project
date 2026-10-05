@@ -44,7 +44,8 @@ curl -X POST $API/items -H 'Content-Type: application/json' \
   -d '{"name":"Blue umbrella","type":1,"location_id":1,"user_id":1}'   # type: 0 = lost, 1 = found
 ```
 
-To add a photo, see the upload flow in `docs/STORAGE_DESIGN.md`.
+To add a photo or upload a file, see `milestones/milestone4/README.md`, which
+has a runnable command for every endpoint.
 
 ## Tests
 
@@ -54,14 +55,14 @@ With the stack running:
 - `scripts/api_tester.py` checks every rule in the error contract. It wipes the
   database first.
   ```sh
-  PYTHONPATH=app DATABASE_URL=postgresql+psycopg2://seekr:seekr-devonly@localhost:5432/seekr uv run --with httpx python scripts/api_tester.py
+  PYTHONPATH=app DATABASE_URL=postgresql+psycopg2://seekr:seekr-devonly@localhost:5432/seekr uv run --with httpx2 python scripts/api_tester.py
   ```
 
 # Design docs
-- `docs/Architecture.drawio.html` — diagram of the services
+- `milestones/milestone4/architecture-diagram.png` — the services, the store, and the presigned path
 - `docs/Error Contract.md` — response envelope, status codes, error codes
 - `docs/MESSAGE_ARCHITECTURE.md` — queues, events, and the workers that consume them
-- `docs/STORAGE_DESIGN.md` — photo upload flow, object storage key scheme, content-type handling
+- `milestones/milestone4/STORAGE_DESIGN.md` — photo and file uploads, key scheme, content types, write order
 
 # Contributing Code
 

@@ -1,6 +1,6 @@
 """End-to-end smoke test against a real Postgres.
 
-    PYTHONPATH=app DATABASE_URL=postgresql+psycopg2://seekr:seekr-devonly@localhost:5432/seekr uv run --with httpx python scripts/api_tester.py
+    PYTHONPATH=app DATABASE_URL=postgresql+psycopg2://seekr:seekr-devonly@localhost:5432/seekr uv run --with httpx2 python scripts/api_tester.py
 
 Drops and recreates every table, then exercises each rule in the contract and
 prints the status code and body.

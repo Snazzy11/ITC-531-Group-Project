@@ -1,0 +1,135 @@
+Uploads through the API: single and batch, the 413 and the 400, listing, download and delete. Sample files are in $TMP.
+
+API=http://localhost:8000/api/v1
+ADMIN='X-Admin-Token: dev-admin-token'
+JSON='Content-Type: application/json'
+
+$ ls -l $TMP
+total 11304
+-rw-r--r-- 1 parker parker 11534336 Oct  4 23:21 big.pdf
+-rw-r--r-- 1 parker parker       52 Oct  4 23:21 not-a-photo.png
+-rw-r--r-- 1 parker parker     8229 Oct  4 23:21 photo.jpg
+-rw-r--r-- 1 parker parker     9093 Oct  4 23:21 receipt.pdf
+-rw-r--r-- 1 parker parker     9093 Oct  4 23:21 resume.pdf
+
+$ curl -s -X POST $API/locations -H "$ADMIN" -H "$JSON" -d '{"name":"Library","coordinates":"40.19,-84.24"}' -w "$CODE"
+{"name":"Library","coordinates":"40.19,-84.24","description":null,"id":1}
+HTTP 201
+
+$ curl -s -X POST $API/users -H "$JSON" -d '{"display_name":"user-one","real_name":"First User","password":"not-a-secret","is_admin":false}' -w "$CODE"
+{"display_name":"user-one","real_name":"First User","id":1}
+HTTP 201
+
+$ curl -s -X POST $API/users -H "$JSON" -d '{"display_name":"user-two","real_name":"Second User","password":"not-a-secret","is_admin":false}' -w "$CODE"
+{"display_name":"user-two","real_name":"Second User","id":2}
+HTTP 201
+
+# Two users upload resume.pdf: two different keys, neither containing the filename.
+$ curl -s -X POST $API/files -F user_id=1 -F file=@$TMP/resume.pdf -w "$CODE"
+{"id":1,"user_id":1,"key":"users/1/files/4467023f-98d3-4c25-a317-39efe2b3737d.pdf","original_filename":"resume.pdf","content_type":"application/pdf","size_bytes":9093,"uploaded_at":"2026-10-05T03:21:44.487413Z"}
+HTTP 201
+
+$ curl -s -X POST $API/files -F user_id=2 -F file=@$TMP/resume.pdf -w "$CODE"
+{"id":2,"user_id":2,"key":"users/2/files/0d1c62a1-a342-4de7-bfb9-b9ce4f194013.pdf","original_filename":"resume.pdf","content_type":"application/pdf","size_bytes":9093,"uploaded_at":"2026-10-05T03:21:44.537312Z"}
+HTTP 201
+
+# Several files in one request.
+$ curl -s -X POST $API/files/batch -F user_id=1 -F files=@$TMP/receipt.pdf -F files=@$TMP/photo.jpg -w "$CODE"
+[{"id":3,"user_id":1,"key":"users/1/files/97dbd5d2-d9ef-4fdc-a7d4-a40e5da9371c.pdf","original_filename":"receipt.pdf","content_type":"application/pdf","size_bytes":9093,"uploaded_at":"2026-10-05T03:21:44.574203Z"},{"id":4,"user_id":1,"key":"users/1/files/59d8325b-c71f-4ca1-98b8-ddd0cda2632a.jpg","original_filename":"photo.jpg","content_type":"image/jpeg","size_bytes":8229,"uploaded_at":"2026-10-05T03:21:44.574203Z"}]
+HTTP 201
+
+# 413: an 11 MB file; the ceiling is 10 MB.
+$ curl -s -X POST $API/files -F user_id=1 -F file=@$TMP/big.pdf -w "$CODE"
+{"error":{"code":"FILE_TOO_LARGE","detail":"each file must be at most 10 MB","fields":null,"request_id":"b947d787c74e39981929ccc80afd9cfd"}}
+HTTP 413
+
+# 400: HTML claiming to be a PNG. The type comes from the bytes, not the claim.
+$ curl -s -X POST $API/files -F user_id=1 -F "file=@$TMP/not-a-photo.png;type=image/png" -w "$CODE"
+{"error":{"code":"UNSUPPORTED_FILE_TYPE","detail":"only JPEG, PNG, WebP, HEIC and PDF files are accepted","fields":null,"request_id":"45c64a7905a4d458661b957da37eeee8"}}
+HTTP 400
+
+# 400 in a batch: one bad file and nothing from the request is stored.
+$ curl -s -X POST $API/files/batch -F user_id=1 -F files=@$TMP/receipt.pdf -F "files=@$TMP/not-a-photo.png;type=image/png" -w "$CODE"
+{"error":{"code":"UNSUPPORTED_FILE_TYPE","detail":"only JPEG, PNG, WebP, HEIC and PDF files are accepted","fields":null,"request_id":"2eab533b0303ca4d39c4fb54fb688e57"}}
+HTTP 400
+
+# The store and the index: four objects, four rows. Nothing from the refused uploads.
+$ $DC exec -T app python -c "from ports import storage; [print(size, key) for key, size in storage.list_objects()]"
+9093 users/1/files/4467023f-98d3-4c25-a317-39efe2b3737d.pdf
+8229 users/1/files/59d8325b-c71f-4ca1-98b8-ddd0cda2632a.jpg
+9093 users/1/files/97dbd5d2-d9ef-4fdc-a7d4-a40e5da9371c.pdf
+9093 users/2/files/0d1c62a1-a342-4de7-bfb9-b9ce4f194013.pdf
+
+$ $DC exec -T db psql -U seekr -d seekr -c "SELECT id, user_id, key, original_filename, content_type, size_bytes, uploaded_at FROM files ORDER BY id"
+ id | user_id |                          key                           | original_filename |  content_type   | size_bytes |          uploaded_at          
+----+---------+--------------------------------------------------------+-------------------+-----------------+------------+-------------------------------
+  1 |       1 | users/1/files/4467023f-98d3-4c25-a317-39efe2b3737d.pdf | resume.pdf        | application/pdf |       9093 | 2026-10-05 03:21:44.487413+00
+  2 |       2 | users/2/files/0d1c62a1-a342-4de7-bfb9-b9ce4f194013.pdf | resume.pdf        | application/pdf |       9093 | 2026-10-05 03:21:44.537312+00
+  3 |       1 | users/1/files/97dbd5d2-d9ef-4fdc-a7d4-a40e5da9371c.pdf | receipt.pdf       | application/pdf |       9093 | 2026-10-05 03:21:44.574203+00
+  4 |       1 | users/1/files/59d8325b-c71f-4ca1-98b8-ddd0cda2632a.jpg | photo.jpg         | image/jpeg      |       8229 | 2026-10-05 03:21:44.574203+00
+(4 rows)
+
+
+$ $DC exec -T app python -c "from ports import storage; print(storage.metadata('$(curl -s $API/files/1 | jq -r .key)'))"
+{'original-name': 'resume.pdf', 'upload-id': '4467023f-98d3-4c25-a317-39efe2b3737d'}
+
+# Listing: paginated, filtered by content type and by part of the filename.
+$ curl -s "$API/files?content_type=application/pdf" | jq -c '.[] | {id, original_filename, content_type}'
+{"id":3,"original_filename":"receipt.pdf","content_type":"application/pdf"}
+{"id":2,"original_filename":"resume.pdf","content_type":"application/pdf"}
+{"id":1,"original_filename":"resume.pdf","content_type":"application/pdf"}
+
+$ curl -s "$API/files?name=RESUME" | jq -c '.[] | {id, user_id, original_filename}'
+{"id":2,"user_id":2,"original_filename":"resume.pdf"}
+{"id":1,"user_id":1,"original_filename":"resume.pdf"}
+
+$ curl -s "$API/files?limit=2&offset=0" | jq -c '.[] | {id, original_filename}'
+{"id":4,"original_filename":"photo.jpg"}
+{"id":3,"original_filename":"receipt.pdf"}
+
+$ curl -s "$API/files?limit=2&offset=2" | jq -c '.[] | {id, original_filename}'
+{"id":2,"original_filename":"resume.pdf"}
+{"id":1,"original_filename":"resume.pdf"}
+
+# Retrieve and download: the stored content type comes back.
+$ curl -s $API/files/1 -w "$CODE"
+{"id":1,"user_id":1,"key":"users/1/files/4467023f-98d3-4c25-a317-39efe2b3737d.pdf","original_filename":"resume.pdf","content_type":"application/pdf","size_bytes":9093,"uploaded_at":"2026-10-05T03:21:44.487413Z"}
+HTTP 200
+
+$ curl -s -D - -o $TMP/downloaded.pdf $API/files/1/content | grep -i -E '^(HTTP|content-type|content-length|content-disposition)'
+HTTP/1.1 200 OK
+Content-Type: application/pdf
+Content-Length: 9093
+content-disposition: attachment; filename*=UTF-8''resume.pdf
+
+$ curl -s -D - -o $TMP/downloaded.jpg $API/files/4/content | grep -i -E '^(HTTP|content-type|content-length)'
+HTTP/1.1 200 OK
+Content-Type: image/jpeg
+Content-Length: 8229
+
+$ cmp $TMP/resume.pdf $TMP/downloaded.pdf && echo "downloaded bytes match the upload"
+downloaded bytes match the upload
+
+# Delete removes the object and the row.
+$ curl -s -X DELETE $API/files/3 -w "$CODE"
+
+HTTP 204
+
+$ curl -s $API/files/3 -w "$CODE"
+{"error":{"code":"FILE_NOT_FOUND","detail":"file not found","fields":null,"request_id":"b7f4b3107f64585457350197e89e42b2"}}
+HTTP 404
+
+$ $DC exec -T app python -c "from ports import storage; [print(size, key) for key, size in storage.list_objects()]"
+9093 users/1/files/4467023f-98d3-4c25-a317-39efe2b3737d.pdf
+8229 users/1/files/59d8325b-c71f-4ca1-98b8-ddd0cda2632a.jpg
+9093 users/2/files/0d1c62a1-a342-4de7-bfb9-b9ce4f194013.pdf
+
+$ $DC exec -T db psql -U seekr -d seekr -c "SELECT id, user_id, key, original_filename, content_type, size_bytes, uploaded_at FROM files ORDER BY id"
+ id | user_id |                          key                           | original_filename |  content_type   | size_bytes |          uploaded_at          
+----+---------+--------------------------------------------------------+-------------------+-----------------+------------+-------------------------------
+  1 |       1 | users/1/files/4467023f-98d3-4c25-a317-39efe2b3737d.pdf | resume.pdf        | application/pdf |       9093 | 2026-10-05 03:21:44.487413+00
+  2 |       2 | users/2/files/0d1c62a1-a342-4de7-bfb9-b9ce4f194013.pdf | resume.pdf        | application/pdf |       9093 | 2026-10-05 03:21:44.537312+00
+  4 |       1 | users/1/files/59d8325b-c71f-4ca1-98b8-ddd0cda2632a.jpg | photo.jpg         | image/jpeg      |       8229 | 2026-10-05 03:21:44.574203+00
+(3 rows)
+
+

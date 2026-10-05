@@ -43,11 +43,10 @@ def check_size(data: bytes) -> None:
         raise Rejected(f"the file is larger than {MAX_UPLOAD_BYTES // 2**20} MB")
 
 
-def detect_type(data: bytes) -> str:
-    """Every rule `file -k` matches has to be an allowed image type. Plain
-    `file` stops at the first match, which lets a polyglot (bytes that are an
-    image and also something else) through. Data appended after an image
-    still passes; reencode() is what drops it."""
+def sniff(data: bytes) -> list[str]:
+    """Every MIME type `file -k` says the bytes match, generic ones dropped.
+    Plain `file` stops at the first match, which lets a polyglot (bytes that
+    are an image and also something else) through."""
     output = subprocess.run(
         ["file", "-k", "-b", "-r", "--mime-type", "-"],
         input=data,
@@ -56,7 +55,13 @@ def detect_type(data: bytes) -> str:
         timeout=10,
     ).stdout.decode()
     matches = [line.removeprefix("- ").strip() for line in output.splitlines()]
-    matches = [m for m in matches if m and m not in GENERIC_TYPES]
+    return [m for m in matches if m and m not in GENERIC_TYPES]
+
+
+def detect_type(data: bytes) -> str:
+    """Every match has to be an allowed image type. Data appended after an
+    image still passes; reencode() is what drops it."""
+    matches = sniff(data)
     if not matches:
         raise Rejected("the file is not a recognized image")
     for match in matches:

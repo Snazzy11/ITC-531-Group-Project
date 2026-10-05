@@ -1,5 +1,6 @@
-"""Lost & Found API. Every endpoint is in this one file, top to bottom:
-items, then matches, then locations, then item photos.
+"""Lost & Found API. Every endpoint is in this file, top to bottom: items,
+then matches, then locations, then item photos, then users - except the
+/files endpoints, which are in files.py.
 
     uvicorn api:app --reload      # docs at http://127.0.0.1:8000/docs
 """
@@ -18,12 +19,13 @@ from sqlalchemy.orm import Session
 
 import crud
 import errors
+import files
 import messaging
 import schemas
-import storage
 from database import models
 from database.database import Base, engine, get_db
 from errors import APIError, register_error_handlers
+from ports import storage
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("lostfound")
@@ -40,6 +42,7 @@ app = FastAPI(title="Lost & Found API", version="0.2.0", lifespan=lifespan)
 # Points every kind of failure at the handlers in errors.py, so nothing escapes
 # in FastAPI's default {"detail": "..."} shape.
 register_error_handlers(app)
+app.include_router(files.router)
 
 
 @app.middleware("http")
@@ -501,7 +504,7 @@ def hard_delete_location(location_id: int, db: Session = Depends(get_db)):
 # item photos
 # The API never handles image bytes. The client PUTs the file straight to the
 # store with upload_url, then calls /complete; the image worker does the rest.
-# See docs/STORAGE_DESIGN.md.
+# See milestones/milestone4/STORAGE_DESIGN.md.
 
 def image_out(image: models.Image) -> schemas.ImageResponse:
     response = schemas.ImageResponse.model_validate(image)

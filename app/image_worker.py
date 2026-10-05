@@ -3,11 +3,11 @@ import logging
 
 import crud
 import image_processing
-import storage
 from database.database import SessionLocal
 from database.models import ImageStatus
 from image_processing import Rejected
 from messaging import IMAGE_QUEUE, connect
+from ports import storage
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logging.getLogger("pika").setLevel(logging.WARNING)
@@ -60,7 +60,7 @@ def process(item_id: int, upload_id: str) -> None:
             return
 
         key = storage.photo_key(item_id, upload_id)
-        storage.write(key, photo, "image/jpeg")
+        storage.write(key, photo, "image/jpeg", upload_id)
         for old_key in crud.mark_image_ready(db, image, key, content_type, len(data)):
             storage.delete(old_key)
         storage.delete(pending)

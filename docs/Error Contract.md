@@ -66,7 +66,8 @@ is not.
 | 401 | `UNAUTHENTICATED` | Admin route, no `X-Admin-Token` header |
 | 403 | `FORBIDDEN` | Admin route, wrong `X-Admin-Token` |
 | 404 | `NOT_FOUND` | Unknown route |
-| 404 | `ITEM_NOT_FOUND` / `MATCH_NOT_FOUND` / `LOCATION_NOT_FOUND` / `IMAGE_NOT_FOUND` / `USER_NOT_FOUND` | Referenced row missing |
+| 400 | `UNSUPPORTED_FILE_TYPE` | A `/files` upload whose bytes are not JPEG, PNG, WebP, HEIC or PDF, whatever the client claimed |
+| 404 | `ITEM_NOT_FOUND` / `MATCH_NOT_FOUND` / `LOCATION_NOT_FOUND` / `IMAGE_NOT_FOUND` / `USER_NOT_FOUND` / `FILE_NOT_FOUND` | Referenced row missing |
 | 405 | `METHOD_NOT_ALLOWED` | Wrong verb on a real path |
 | 409 | `ITEM_NOT_OPEN` | Matching an item that is not `open` |
 | 409 | `ITEM_HAS_MATCHES` | Hard-deleting an item that is in a match |
@@ -78,12 +79,15 @@ is not.
 | 409 | `LOCATION_NAME_TAKEN` | Duplicate location name |
 | 409 | `USER_NAME_TAKEN` | Duplicate user display name |
 | 409 | `UPLOAD_NOT_RECEIVED` | Completing a photo upload before the file was PUT to `upload_url` |
+| 413 | `FILE_TOO_LARGE` | A `/files` upload over 10 MB, or a request over the gateway's 51 MB cap |
+| 413 | `TOO_MANY_FILES` | More than 5 files in one `/files/batch` request |
 | 422 | `VALIDATION_ERROR` | Pydantic rejected the payload; `fields` populated |
 | 422 | `ITEM_TYPE_MISMATCH` | A match side points at the wrong `type` |
 | 422 | `MATCH_SELF` | `lost_item_id == found_item_id` |
 | 422 | `EMPTY_UPDATE` | PATCH body changes nothing |
 | 500 | `INTERNAL_ERROR` | Anything unexpected; fixed generic message |
 | 503 | `SERVICE_UNAVAILABLE` | `OperationalError` / `InterfaceError` from psycopg |
+| 503 | `STORAGE_UNAVAILABLE` | Any error from the object store (botocore) |
 
 ## Success codes
 

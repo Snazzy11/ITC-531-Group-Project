@@ -1,0 +1,19 @@
+The storage report against our stack after upload.txt and presigned.txt.
+
+$ $DC exec -T app python - < scripts/storage_report.py; echo "exit=$?"
+Storage report: bucket=seekr-images prefix='' objects=4 indexed=4 in_flight=0
+
+Unstamped objects (no upload-id): 0
+
+Off-scheme keys: 0
+
+Objects with no row: 0
+
+Rows with no object: 0
+
+Bytes by top-level prefix:
+  items: 3137
+  users: 26415
+  TOTAL: 29552
+exit=0
+
