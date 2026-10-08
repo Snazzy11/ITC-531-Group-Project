@@ -1,0 +1,44 @@
+Teardown. Our compose project is named campus-seekr, so its volumes are
+named campus-seekr_*; both greps are shown.
+
+$ $DC down --volumes
+ Container campus-seekr-gateway-1  Stopping
+ Container campus-seekr-image_worker-1  Stopping
+ Container campus-seekr-gateway-1  Stopped
+ Container campus-seekr-gateway-1  Removing
+ Container campus-seekr-gateway-1  Removed
+ Container campus-seekr-app-1  Stopping
+ Container campus-seekr-app-1  Stopped
+ Container campus-seekr-app-1  Removing
+ Container campus-seekr-app-1  Removed
+ Container campus-seekr-image_worker-1  Stopped
+ Container campus-seekr-image_worker-1  Removing
+ Container campus-seekr-image_worker-1  Removed
+ Container campus-seekr-db-1  Stopping
+ Container campus-seekr-storage-1  Stopping
+ Container campus-seekr-broker-1  Stopping
+ Container campus-seekr-storage-1  Stopped
+ Container campus-seekr-storage-1  Removing
+ Container campus-seekr-storage-1  Removed
+ Container campus-seekr-db-1  Stopped
+ Container campus-seekr-db-1  Removing
+ Container campus-seekr-db-1  Removed
+ Container campus-seekr-broker-1  Stopped
+ Container campus-seekr-broker-1  Removing
+ Container campus-seekr-broker-1  Removed
+ Volume campus-seekr_seekr_data  Removing
+ Network campus-seekr_default  Removing
+ Volume campus-seekr_brokerdata  Removing
+ Volume campus-seekr_s3data  Removing
+ Volume campus-seekr_seekr_data  Removed
+ Volume campus-seekr_brokerdata  Removed
+ Volume campus-seekr_s3data  Removed
+ Network campus-seekr_default  Removed
+
+$ docker ps
+CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
+
+$ docker volume ls | grep itc531
+
+$ docker volume ls | grep campus-seekr
+

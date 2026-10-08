@@ -1,0 +1,62 @@
+Presigned flows: the photo goes from curl straight to the store (port 9000), and is fetched back from the store by curl, not through the API (port 8000).
+
+API=http://localhost:8000/api/v1
+ADMIN='X-Admin-Token: dev-admin-token'
+JSON='Content-Type: application/json'
+
+$ curl -s -X POST $API/items -H "$JSON" -d '{"name":"Blue umbrella","type":1,"location_id":1,"user_id":1}' -w "$CODE"
+{"name":"Blue umbrella","description":null,"location_id":1,"user_id":1,"id":1,"type":1,"status":"open","created_at":"2026-10-05T16:26:36.708933Z","photo_url":null}
+HTTP 201
+
+# 1. The API issues a presigned PUT. Note the bytes: this call sends nothing up.
+$ curl -s -o $TMP/upload.json -X POST $API/items/1/images -w 'HTTP %{http_code}: %{size_upload} bytes sent to the API, %{size_download} bytes of JSON back\n'; jq . $TMP/upload.json
+HTTP 201: 0 bytes sent to the API, 488 bytes of JSON back
+{
+  "upload_id": "2bb3ec02-5e20-4152-bc70-b6923e09bc31",
+  "status": "awaiting_upload",
+  "reject_reason": null,
+  "photo_url": null,
+  "upload_url": "http://localhost:9000/seekr-images/uploads/pending/2bb3ec02-5e20-4152-bc70-b6923e09bc31?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=seekr%2F20261005%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261005T162636Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=afeef1852f66b9d6221e064215ca97b439e046eeb47261e7a65bb9ea58488367",
+  "expires_in": 600
+}
+
+# 2. curl uploads the photo directly to the store.
+$ curl -s -X PUT --upload-file $TMP/photo.jpg "$UPLOAD_URL" -w 'HTTP %{http_code}: %{size_upload} bytes sent to %{remote_ip}:%{remote_port}\n'
+HTTP 200: 8229 bytes sent to ::1:9000
+
+# 3. The completion callback. Again nothing is sent up.
+$ curl -s -X POST $API/items/1/images/$UPLOAD_ID/complete -w '\nHTTP %{http_code}: %{size_upload} bytes sent to the API\n'
+{"upload_id":"2bb3ec02-5e20-4152-bc70-b6923e09bc31","status":"processing","reject_reason":null,"photo_url":null}
+HTTP 202: 0 bytes sent to the API
+
+$ curl -s $API/items/1/images/$UPLOAD_ID | jq .
+{
+  "upload_id": "2bb3ec02-5e20-4152-bc70-b6923e09bc31",
+  "status": "ready",
+  "reject_reason": null,
+  "photo_url": "http://localhost:9000/seekr-images/items/1/2bb3ec02-5e20-4152-bc70-b6923e09bc31/photo.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=seekr%2F20261005%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261005T162637Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=01db7677f43c5b7b025eb58d3a4174cea187de5b44450ee951171123fef2ca58"
+}
+
+# The listing: the processed photo is stored and the pending upload is gone.
+$ $DC exec -T app python -c "from ports import storage; [print(size, key) for key, size in storage.list_objects()]"
+3137 items/1/2bb3ec02-5e20-4152-bc70-b6923e09bc31/photo.jpg
+8229 users/1/files/2c1ee347-3da3-4fc1-a8ea-a6c1ad4d7da3.jpg
+9093 users/1/files/430d7f39-749d-4fb9-b768-7ca2ebe3a241.pdf
+9093 users/2/files/b7cc6306-04bf-4590-a2a8-b7bb359ee412.pdf
+
+# The gateway's log has the API calls and no PUT: the photo never passed through it.
+$ $DC exec -T gateway grep -E 'images|PUT' /var/log/nginx/api.access.log
+172.18.0.1 bc616f0941ad0445adc020992810927c "POST /api/v1/items/1/images HTTP/1.1" 201 upstream=172.18.0.6:8000 rt=0.055 urt=0.055
+172.18.0.1 2204ab06cad06fffba48d4ac882ea341 "POST /api/v1/items/1/images/2bb3ec02-5e20-4152-bc70-b6923e09bc31/complete HTTP/1.1" 202 upstream=172.18.0.6:8000 rt=0.014 urt=0.013
+172.18.0.1 7f135a4e1270a03c0c3fffd52ca775f0 "GET /api/v1/items/1/images/2bb3ec02-5e20-4152-bc70-b6923e09bc31 HTTP/1.1" 200 upstream=172.18.0.6:8000 rt=0.003 urt=0.002
+172.18.0.1 18c3d9ceb4775c1295d61dce76fc8714 "GET /api/v1/items/1/images/2bb3ec02-5e20-4152-bc70-b6923e09bc31 HTTP/1.1" 200 upstream=172.18.0.6:8000 rt=0.003 urt=0.003
+172.18.0.1 e7c86e12c14b40661f2489d4596e86c1 "GET /api/v1/items/1/images/2bb3ec02-5e20-4152-bc70-b6923e09bc31 HTTP/1.1" 200 upstream=172.18.0.6:8000 rt=0.003 urt=0.003
+
+# 4. A presigned GET, fetched by curl straight from the store.
+$ echo "$PHOTO_URL"
+http://localhost:9000/seekr-images/items/1/2bb3ec02-5e20-4152-bc70-b6923e09bc31/photo.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=seekr%2F20261005%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261005T162638Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=6abc11cc727a060de6f65e6c13058e8db7da91b36bfc411cee265cd0ab47f1fc
+
+$ curl -s -o $TMP/fetched.jpg "$PHOTO_URL" -w 'HTTP %{http_code}: %{size_download} bytes of %{content_type} from %{remote_ip}:%{remote_port}\n'
+HTTP 200: 3137 bytes of image/jpeg from ::1:9000
+
+# Photo bytes that passed through the API: 0. The 8229-byte upload and the download both went straight between curl and the store.

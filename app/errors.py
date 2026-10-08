@@ -33,6 +33,7 @@ Why it looks like this:
 
 import logging
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -54,6 +55,9 @@ NOT_FOUND = "NOT_FOUND"
 ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
 MATCH_NOT_FOUND = "MATCH_NOT_FOUND"
 LOCATION_NOT_FOUND = "LOCATION_NOT_FOUND"
+IMAGE_NOT_FOUND = "IMAGE_NOT_FOUND"
+USER_NOT_FOUND = "USER_NOT_FOUND"
+FILE_NOT_FOUND = "FILE_NOT_FOUND"
 
 METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
 
@@ -66,6 +70,13 @@ MATCH_ALREADY_EXISTS = "MATCH_ALREADY_EXISTS"
 LOCATION_INACTIVE = "LOCATION_INACTIVE"
 LOCATION_IN_USE = "LOCATION_IN_USE"
 LOCATION_NAME_TAKEN = "LOCATION_NAME_TAKEN"
+UPLOAD_NOT_RECEIVED = "UPLOAD_NOT_RECEIVED"
+USER_NAME_TAKEN = "USER_NAME_TAKEN"
+
+# 400 / 413 - an upload refused before anything is written
+UNSUPPORTED_FILE_TYPE = "UNSUPPORTED_FILE_TYPE"
+FILE_TOO_LARGE = "FILE_TOO_LARGE"
+TOO_MANY_FILES = "TOO_MANY_FILES"
 
 # 422 - we cannot process the values that were sent
 VALIDATION_ERROR = "VALIDATION_ERROR"
@@ -75,6 +86,7 @@ EMPTY_UPDATE = "EMPTY_UPDATE"
 
 INTERNAL_ERROR = "INTERNAL_ERROR"
 SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE"
 
 
 class APIError(HTTPException):
@@ -195,6 +207,22 @@ async def handle_db_error(request: Request, exc: SQLAlchemyError):
     return make_response(request, 500, body)
 
 
+async def handle_storage_error(request: Request, exc: Exception):
+    """The object store refused or could not be reached. botocore errors carry
+    the endpoint and bucket, so only the log sees them."""
+    logger.error(
+        "object store error request_id=%s path=%s",
+        getattr(request.state, "request_id", None),
+        request.url.path,
+        exc_info=exc,
+    )
+    body = ErrorBody(
+        code=STORAGE_UNAVAILABLE,
+        detail="file storage is temporarily unavailable, please try again",
+    )
+    return make_response(request, 503, body)
+
+
 async def handle_unexpected(request: Request, exc: Exception):
     """Last resort error"""
     logger.exception(
@@ -207,10 +235,12 @@ async def handle_unexpected(request: Request, exc: Exception):
 
 
 def register_error_handlers(app: FastAPI) -> None:
-    """Called once from main.py"""
+    """Called once from api.py"""
     app.add_exception_handler(StarletteHTTPException, handle_http_exception)
     app.add_exception_handler(RequestValidationError, handle_validation_error)
     app.add_exception_handler(OperationalError, handle_db_unavailable)
     app.add_exception_handler(InterfaceError, handle_db_unavailable)
     app.add_exception_handler(SQLAlchemyError, handle_db_error)
+    app.add_exception_handler(BotoCoreError, handle_storage_error)
+    app.add_exception_handler(ClientError, handle_storage_error)
     app.add_exception_handler(Exception, handle_unexpected)

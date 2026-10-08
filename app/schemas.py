@@ -22,17 +22,21 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from database.models import ItemStatus
+from database.models import ImageStatus, ItemStatus
 
 REQUEST = ConfigDict(extra="forbid", str_strip_whitespace=True)
+RESPONSE = model_config = ConfigDict(from_attributes=True)
 
 
-# --- items ------------------------------------------------------------------
+
+# items
 
 class ItemBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
     location_id: int = Field(gt=0)
+    # Taken on trust until login exists; then it comes from the signed-in user.
+    user_id: int = Field(gt=0)
 
 
 class ItemCreate(ItemBase):
@@ -59,15 +63,17 @@ class ItemStatusUpdate(BaseModel):
 
 
 class ItemResponse(ItemBase):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = RESPONSE
 
     id: int
     type: Literal[0, 1]
     status: ItemStatus
     created_at: datetime
+    # Presigned GET for the processed photo; expires, so don't store it.
+    photo_url: str | None = None
 
 
-# --- matches ----------------------------------------------------------------
+# matches
 
 class MatchCreate(BaseModel):
     model_config = REQUEST
@@ -77,7 +83,7 @@ class MatchCreate(BaseModel):
 
 
 class MatchResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = RESPONSE
 
     id: int
     lost_item_id: int
@@ -85,7 +91,7 @@ class MatchResponse(BaseModel):
     created_at: datetime
 
 
-# --- locations --------------------------------------------------------------
+# locations
 
 class LocationBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -109,7 +115,7 @@ class LocationResponse(LocationBase):
     """`is_active` is omitted: it only governs whether a location can be picked
     for a new post, and retired locations still appear on old posts."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = RESPONSE
 
     id: int
 
@@ -119,3 +125,54 @@ class LocationAdminResponse(LocationResponse):
     apart."""
 
     is_active: bool
+
+
+# images
+
+class ImageResponse(BaseModel):
+    model_config = RESPONSE
+
+    upload_id: str
+    status: ImageStatus
+    reject_reason: str | None = None
+    photo_url: str | None = None
+
+
+class ImageUploadResponse(ImageResponse):
+    """PUT the file to upload_url, then POST to .../complete."""
+
+    upload_url: str
+    expires_in: int
+
+
+# files
+
+class FileResponse(BaseModel):
+    model_config = RESPONSE
+
+    id: int
+    user_id: int
+    key: str
+    original_filename: str
+    content_type: str
+    size_bytes: int
+    uploaded_at: datetime
+
+
+# users
+
+class UserBase(BaseModel):
+    display_name: str = Field(min_length=6, max_length=50)
+    real_name: str = Field(min_length=2, max_length=50)
+
+class UserCreate(UserBase): # Currently we will allow anyone to create an account with any access level
+    model_config = REQUEST
+    password: str = Field(min_length=6, max_length=100)
+    is_admin: bool = Field()
+    
+class UserResponse(UserBase):
+    model_config = RESPONSE
+    
+    id: int
+
+# '{"display_name": "string","real_name": "string","password": "string","is_admin": true}'

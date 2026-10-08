@@ -1,0 +1,38 @@
+The same report after two deliberate faults.
+
+# 1. A presigned PUT whose client never calls /complete: an unstamped object.
+$ curl -s -o $TMP/abandoned.json -X POST $API/items/1/images -w 'HTTP %{http_code}\n'
+HTTP 201
+
+$ curl -s -X PUT --upload-file $TMP/photo.jpg "$(jq -r .upload_url $TMP/abandoned.json)" -w 'HTTP %{http_code}\n'
+HTTP 200
+
+# 2. A row removed behind the API's back: an object with no row.
+$ $DC exec -T db psql -U seekr -d seekr -c "DELETE FROM files WHERE id = 2 RETURNING key"
+                          key                           
+--------------------------------------------------------
+ users/2/files/b7cc6306-04bf-4590-a2a8-b7bb359ee412.pdf
+(1 row)
+
+DELETE 1
+
+$ $DC exec -T app python - < scripts/storage_report.py; echo "exit=$?"
+Storage report: bucket=seekr-images prefix='' objects=5 indexed=3 in_flight=1
+
+Unstamped objects (no upload-id): 1
+  uploads/pending/ff3395a5-308f-458c-a06f-1ab444ab689d
+
+Off-scheme keys: 0
+
+Objects with no row: 1
+  users/2/files/b7cc6306-04bf-4590-a2a8-b7bb359ee412.pdf
+
+Rows with no object: 0
+
+Bytes by top-level prefix:
+  items: 3137
+  uploads: 8229
+  users: 26415
+  TOTAL: 37781
+exit=1
+

@@ -1,14 +1,17 @@
-"""Lost & Found API. Every endpoint is in this one file, top to bottom:
-items, then matches, then locations.
+"""Lost & Found API. Every endpoint is in this file, top to bottom: items,
+then matches, then locations, then item photos, then users - except the
+/files endpoints, which are in files.py.
 
-    uvicorn main:app --reload      # docs at http://127.0.0.1:8000/docs
+    uvicorn api:app --reload      # docs at http://127.0.0.1:8000/docs
 """
 
 import logging
 import os
 import uuid
+from contextlib import asynccontextmanager
 from typing import Annotated
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import Depends, FastAPI, Header, Query, Request, Response
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -16,18 +19,30 @@ from sqlalchemy.orm import Session
 
 import crud
 import errors
-from database import models
+import files
+import messaging
 import schemas
+from database import models
 from database.database import Base, engine, get_db
 from errors import APIError, register_error_handlers
+from ports import storage
 
 logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("lostfound")
 
-app = FastAPI(title="Lost & Found API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    storage.ensure_bucket()
+    yield
+
+
+app = FastAPI(title="Lost & Found API", version="0.2.0", lifespan=lifespan)
 
 # Points every kind of failure at the handlers in errors.py, so nothing escapes
 # in FastAPI's default {"detail": "..."} shape.
 register_error_handlers(app)
+app.include_router(files.router)
 
 
 @app.middleware("http")
@@ -50,9 +65,8 @@ async def attach_request_id(request: Request, call_next):
 Base.metadata.create_all(bind=engine)
 
 
-# --- admin placeholder ------------------------------------------------------
-# Stands in for real auth until user_id lands. Replace this one function and
-# every admin route below follows.
+# admin placeholder
+# Stands in for real auth until implemented.
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "dev-admin-token")
 
 
@@ -66,7 +80,23 @@ def require_admin(x_admin_token: Annotated[str | None, Header()] = None) -> None
 admin = Depends(require_admin)
 
 
-# --- items ------------------------------------------------------------------
+def item_out(item: models.Item) -> schemas.ItemResponse:
+    response = schemas.ItemResponse.model_validate(item)
+    if item.photo is not None:
+        response.photo_url = storage.download_url(item.photo.photo_key)
+    return response
+
+
+def emit(event_type: str, item_id: int) -> None:
+    """Events are notifications, not part of the change itself, so a broker
+    outage is logged and the request still succeeds."""
+    try:
+        messaging.publish_event(event_type, {"item_id": item_id})
+    except Exception as exc:
+        log.warning("could not publish %s for item %s: %s", event_type, item_id, exc)
+
+
+# items
 
 @app.post(
     "/items",
@@ -75,6 +105,8 @@ admin = Depends(require_admin)
     responses=errors.errors(404, 409, 422),
 )
 def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db)):
+    if crud.get_user(db, item.user_id) is None:
+        raise APIError(404, errors.USER_NOT_FOUND, "user not found")
     location = crud.get_location(db, item.location_id)
     if location is None:
         raise APIError(404, errors.LOCATION_NOT_FOUND, "location not found")
@@ -82,7 +114,9 @@ def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db)):
         raise APIError(
             409, errors.LOCATION_INACTIVE, "that location has been retired"
         )
-    return crud.create_item(db, item)
+    row = crud.create_item(db, item)
+    emit("item.created", row.id)
+    return item_out(row)
 
 
 @app.get("/items", response_model=list[schemas.ItemResponse])
@@ -100,7 +134,7 @@ def list_items(
     # Pydantic will not coerce the string "0" from a query string to the int
     # literal 0, so every request 422s. ge/le on an int is the way to express
     # the same bound here.
-    return crud.list_items(
+    items = crud.list_items(
         db,
         type=type,
         status=status,
@@ -110,6 +144,7 @@ def list_items(
         limit=limit,
         offset=offset,
     )
+    return [item_out(item) for item in items]
 
 
 @app.get("/items/{item_id}", response_model=schemas.ItemResponse, responses=errors.errors(404))
@@ -117,7 +152,7 @@ def get_item(item_id: int, db: Session = Depends(get_db)):
     item = crud.get_item(db, item_id)
     if item is None:
         raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
-    return item
+    return item_out(item)
 
 
 @app.patch(
@@ -146,7 +181,9 @@ def update_item(item_id: int, changes: schemas.ItemUpdate, db: Session = Depends
         if not location.is_active:
             raise APIError(409, errors.LOCATION_INACTIVE, "that location has been retired")
 
-    return crud.update_item(db, item, payload)
+    item = crud.update_item(db, item, payload)
+    emit("item.updated", item.id)
+    return item_out(item)
 
 
 @app.patch(
@@ -163,7 +200,7 @@ def update_item_status(
 
     new_status = models.ItemStatus(change.status)
     if new_status == item.status:
-        return item
+        return item_out(item)
     if new_status not in crud.CLIENT_TRANSITIONS[item.status]:
         raise APIError(
             409,
@@ -176,7 +213,10 @@ def update_item_status(
             errors.LOCATION_INACTIVE,
             "this post cannot be reopened because its location has been retired",
         )
-    return crud.set_item_status(db, item, new_status)
+    item = crud.set_item_status(db, item, new_status)
+    withdrawn = new_status is models.ItemStatus.WITHDRAWN
+    emit("item.withdrawn" if withdrawn else "item.updated", item.id)
+    return item_out(item)
 
 
 @app.delete("/items/{item_id}", status_code=204, responses=errors.errors(404, 409))
@@ -194,6 +234,7 @@ def withdraw_item(item_id: int, db: Session = Depends(get_db)):
                 f"a {item.status.value} post cannot be withdrawn; delete the match first",
             )
         crud.set_item_status(db, item, models.ItemStatus.WITHDRAWN)
+        emit("item.withdrawn", item.id)
     return Response(status_code=204)
 
 
@@ -208,7 +249,9 @@ def hard_delete_item(item_id: int, db: Session = Depends(get_db)):
     item = crud.get_item(db, item_id)
     if item is None:
         raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
+    upload_ids = crud.list_upload_ids(db, item_id)
     try:
+        # Image rows go with it (ON DELETE CASCADE).
         crud.delete_item(db, item)
     except IntegrityError:
         # The FK RESTRICT is what actually stops this; catching it here is how
@@ -217,10 +260,18 @@ def hard_delete_item(item_id: int, db: Session = Depends(get_db)):
         raise APIError(
             409, errors.ITEM_HAS_MATCHES, "that item is in a match; delete the match first"
         ) from None
+    if upload_ids:
+        try:
+            for upload_id in upload_ids:
+                storage.delete(storage.pending_key(upload_id))
+            storage.delete_prefix(storage.item_prefix(item_id))
+        except (BotoCoreError, ClientError):
+            # The row is already gone, so leftovers are unreferenced and private.
+            log.exception("could not remove stored photos for deleted item %s", item_id)
     return Response(status_code=204)
 
 
-# --- matches ----------------------------------------------------------------
+# matches
 
 @app.post(
     "/matches",
@@ -302,10 +353,9 @@ def matches_by_item(item_id: int, db: Session = Depends(get_db)):
     return crud.list_matches(db, item_id=item_id)
 
 
-# There is deliberately no PATCH /matches/{id}. Repointing a match at different
-# items is not an edit: the old pair has to be released back to 'open' and the
-# new pair re-validated, which is exactly DELETE + POST. It would also quietly
-# falsify created_at.
+# There is deliberately no PATCH /matches/{id}. Changing a match to use a different
+# items is not just an edit, the old pair must be changed back to 'open' and the
+# new pair validated again, so we use DELETE + POST.
 
 
 @app.delete("/matches/{match_id}", status_code=204, responses=errors.errors(404))
@@ -319,7 +369,7 @@ def delete_match(match_id: int, db: Session = Depends(get_db)):
     return Response(status_code=204)
 
 
-# --- locations --------------------------------------------------------------
+# locations
 
 @app.post(
     "/locations",
@@ -345,9 +395,7 @@ def list_locations(
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
-    """Active locations only by default, which is what the 'post an item'
-    dropdown wants. is_active is included here so an admin screen can tell
-    retired entries apart."""
+    """Active locations only by default."""
     return crud.list_locations(
         db, include_inactive=include_inactive, limit=limit, offset=offset
     )
@@ -373,7 +421,7 @@ def get_location(location_id: int, db: Session = Depends(get_db)):
 def items_by_location(location_id: int, db: Session = Depends(get_db)):
     if crud.get_location(db, location_id) is None:
         raise APIError(404, errors.LOCATION_NOT_FOUND, "location not found")
-    return crud.list_items(db, location_id=location_id)
+    return [item_out(item) for item in crud.list_items(db, location_id=location_id)]
 
 
 @app.patch(
@@ -453,8 +501,102 @@ def hard_delete_location(location_id: int, db: Session = Depends(get_db)):
         ) from None
     return Response(status_code=204)
 
+# item photos
+# The API never handles image bytes. The client PUTs the file straight to the
+# store with upload_url, then calls /complete; the image worker does the rest.
+# See milestones/milestone4/STORAGE_DESIGN.md.
 
-# --- meta -------------------------------------------------------------------
+def image_out(image: models.Image) -> schemas.ImageResponse:
+    response = schemas.ImageResponse.model_validate(image)
+    if image.status is models.ImageStatus.READY:
+        response.photo_url = storage.download_url(image.photo_key)
+    return response
+
+
+@app.post(
+    "/items/{item_id}/images",
+    response_model=schemas.ImageUploadResponse,
+    status_code=201,
+    responses=errors.errors(404, 409),
+)
+def start_image_upload(item_id: int, db: Session = Depends(get_db)):
+    """Returns a presigned upload_url. A finished upload replaces the item's
+    current photo."""
+    item = crud.get_item(db, item_id)
+    if item is None:
+        raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
+    if item.status not in crud.EDITABLE_STATUSES:
+        raise APIError(409, errors.ITEM_CLOSED, f"a {item.status.value} post cannot be edited")
+    image = crud.create_image(db, item)
+    return schemas.ImageUploadResponse(
+        upload_id=image.upload_id,
+        status=image.status,
+        upload_url=storage.upload_url(storage.pending_key(image.upload_id)),
+        expires_in=storage.UPLOAD_URL_SECONDS,
+    )
+
+
+@app.post(
+    "/items/{item_id}/images/{upload_id}/complete",
+    response_model=schemas.ImageResponse,
+    status_code=202,
+    responses=errors.errors(404, 409),
+)
+def complete_image_upload(item_id: int, upload_id: str, db: Session = Depends(get_db)):
+    """Call once the PUT to upload_url has succeeded. Idempotent: an upload
+    that is already queued or finished is returned as it is."""
+    image = crud.get_image(db, item_id, upload_id)
+    if image is None:
+        raise APIError(404, errors.IMAGE_NOT_FOUND, "image not found")
+    if image.status is models.ImageStatus.AWAITING_UPLOAD:
+        if not storage.exists(storage.pending_key(upload_id)):
+            raise APIError(
+                409, errors.UPLOAD_NOT_RECEIVED, "nothing has been uploaded to upload_url yet"
+            )
+        # Queue before recording it: if the broker is down this fails, the
+        # status is untouched, and the client can call /complete again.
+        messaging.publish_image_job(item_id, upload_id)
+        image = crud.set_image_status(db, image, models.ImageStatus.PROCESSING)
+    return image_out(image)
+
+
+@app.get(
+    "/items/{item_id}/images/{upload_id}",
+    response_model=schemas.ImageResponse,
+    responses=errors.errors(404),
+)
+def get_image_status(item_id: int, upload_id: str, db: Session = Depends(get_db)):
+    image = crud.get_image(db, item_id, upload_id)
+    if image is None:
+        raise APIError(404, errors.IMAGE_NOT_FOUND, "image not found")
+    return image_out(image)
+
+
+# users
+@app.post( # TODO: Needs actual testing
+    "/users",
+    response_model=schemas.UserResponse,
+    status_code=201,
+    responses=errors.errors(409, 422),
+)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    try:
+        return crud.create_user(db, user)
+    except IntegrityError:
+        db.rollback()
+        raise APIError(
+            409, errors.USER_NAME_TAKEN, "a user with that display name already exists"
+        ) from None
+
+@app.get("/users", response_model=list[schemas.UserResponse])
+def list_users(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0)
+):
+    return crud.list_users(db, limit=limit, offset=offset)
+
+# meta
 
 @app.get("/health")
 def health(db: Session = Depends(get_db)):

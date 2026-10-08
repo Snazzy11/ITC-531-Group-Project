@@ -5,15 +5,18 @@ ADMIN='X-Admin-Token: dev-admin-token'
 JSON='Content-Type: application/json'
 
 
-# Create a location, a lost post, and a found post
+# Create a location, a user, a lost post, and a found post
 curl -s -X POST $API/locations -H "$JSON" -H "$ADMIN" \
   -d '{"name":"Pearce Hall","coordinates":"40.19,-84.24"}'
 
-curl -s -X POST $API/items -H "$JSON" \
-  -d '{"name":"Blue keys","description":"carabiner, 3 keys","type":0,"location_id":1}'
+curl -s -X POST $API/users -H "$JSON" \
+  -d '{"display_name":"tester1","real_name":"Test User","password":"secret123","is_admin":false}'
 
 curl -s -X POST $API/items -H "$JSON" \
-  -d '{"name":"Keyring","description":"found by the vending machines","type":1,"location_id":1}'
+  -d '{"name":"Blue keys","description":"carabiner, 3 keys","type":0,"location_id":1,"user_id":1}'
+
+curl -s -X POST $API/items -H "$JSON" \
+  -d '{"name":"Keyring","description":"found by the vending machines","type":1,"location_id":1,"user_id":1}'
 
 # Match an item and check its ID
 curl -s -X POST $API/matches -H "$JSON" -d '{"lost_item_id":1,"found_item_id":2}'
@@ -35,7 +38,7 @@ curl -s -X POST $API/items -H "$JSON" \
 # Mark returned, unmatch, and confirm asymmetry
 curl -s -X PATCH $API/items/1/status -H "$JSON" -d '{"status":"returned"}'
 curl -s -X DELETE $API/matches/1
-curl -s $API/items/1    # still "returned" — unmatching does not resurrect it
+curl -s $API/items/1    # still "returned" - unmatching does not resurrect it
 curl -s $API/items/2    # back to "open"
 
 

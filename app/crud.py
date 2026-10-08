@@ -1,15 +1,18 @@
 """Database access. Every function takes a Session and returns rows or None -
-no HTTP knowledge, no exceptions raised on purpose. main.py decides what a
+no HTTP knowledge, no exceptions raised on purpose. api.py decides what a
 None or an IntegrityError means to a client.
 
 The one piece of policy that lives here is CLIENT_TRANSITIONS, because it
 describes the item lifecycle rather than any single endpoint.
 """
+import os
 
 from sqlalchemy.orm import Session
-
+from datetime import datetime, timezone
 from database import models
 import schemas
+from database.models import File, Item, Match, Location, User
+from hashlib import scrypt
 
 # Transitions a client may ask for directly via PATCH /items/{id}/status.
 # Anything -> MATCHED and MATCHED -> OPEN are system-only: they happen when a
@@ -31,7 +34,7 @@ EDITABLE_STATUSES = {
 }
 
 
-# --- items ------------------------------------------------------------------
+# items
 
 def create_item(db: Session, item: schemas.ItemCreate) -> models.Item:
     # status is not passed: the column defaults to 'open'.
@@ -42,7 +45,7 @@ def create_item(db: Session, item: schemas.ItemCreate) -> models.Item:
     return row
 
 
-def get_item(db: Session, item_id: int) -> models.Item | None:
+def get_item(db: Session, item_id: int) -> type[Item] | None:
     return db.query(models.Item).filter(models.Item.id == item_id).first()
 
 
@@ -55,7 +58,7 @@ def list_items(
     include_withdrawn: bool = False,
     limit: int = 20,
     offset: int = 0,
-) -> list[models.Item]:
+) -> list[type[Item]]:
     query = db.query(models.Item)
 
     if type is not None:
@@ -109,7 +112,7 @@ def delete_item(db: Session, item: models.Item) -> None:
     db.commit()
 
 
-# --- matches ----------------------------------------------------------------
+# matches
 
 def create_match(db: Session, lost: models.Item, found: models.Item) -> models.Match:
     """Creates the pair and moves both items to 'matched' in one transaction,
@@ -129,7 +132,7 @@ def get_match(db: Session, match_id: int) -> models.Match | None:
 
 def list_matches(
     db: Session, item_id: int | None = None, limit: int = 20, offset: int = 0
-) -> list[models.Match]:
+) -> list[type[Match]]:
     query = db.query(models.Match)
 
     if item_id is not None:
@@ -156,7 +159,7 @@ def delete_match(db: Session, match: models.Match) -> None:
     db.commit()
 
 
-# --- locations --------------------------------------------------------------
+# locations
 
 def create_location(db: Session, location: schemas.LocationCreate) -> models.Location:
     row = models.Location(**location.model_dump())
@@ -166,13 +169,13 @@ def create_location(db: Session, location: schemas.LocationCreate) -> models.Loc
     return row
 
 
-def get_location(db: Session, location_id: int) -> models.Location | None:
+def get_location(db: Session, location_id: int) -> type[Location] | None:
     return db.query(models.Location).filter(models.Location.id == location_id).first()
 
 
 def list_locations(
     db: Session, include_inactive: bool = False, limit: int = 100, offset: int = 0
-) -> list[models.Location]:
+) -> list[type[Location]]:
     query = db.query(models.Location)
 
     if not include_inactive:
@@ -209,3 +212,147 @@ def count_items_at_location(db: Session, location_id: int) -> int:
 def delete_location(db: Session, location: models.Location) -> None:
     db.delete(location)
     db.commit()
+
+
+# images
+
+def create_image(db: Session, item: models.Item) -> models.Image:
+    # upload_id and status come from the column defaults.
+    row = models.Image(item_id=item.id)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_image(db: Session, item_id: int, upload_id: str) -> models.Image | None:
+    return (
+        db.query(models.Image)
+        .filter(models.Image.item_id == item_id, models.Image.upload_id == upload_id)
+        .first()
+    )
+
+
+def list_upload_ids(db: Session, item_id: int) -> list[str]:
+    rows = db.query(models.Image.upload_id).filter(models.Image.item_id == item_id)
+    return [row.upload_id for row in rows]
+
+
+def set_image_status(
+    db: Session, image: models.Image, status: models.ImageStatus
+) -> models.Image:
+    image.status = status
+    db.commit()
+    db.refresh(image)
+    return image
+
+
+def mark_image_rejected(db: Session, image: models.Image, reason: str) -> None:
+    image.status = models.ImageStatus.REJECTED
+    image.reject_reason = reason
+    image.processed_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def mark_image_ready(
+    db: Session, image: models.Image, photo_key: str, content_type: str, size_bytes: int
+) -> list[str]:
+    """Makes this the item's photo and deletes the previous one's row in the
+    same transaction, so an item never has two. Returns the replaced photo
+    keys for the caller to delete from the store after the commit."""
+    replaced = (
+        db.query(models.Image)
+        .filter(
+            models.Image.item_id == image.item_id,
+            models.Image.status == models.ImageStatus.READY,
+            models.Image.id != image.id,
+        )
+        .all()
+    )
+    replaced_keys = [old.photo_key for old in replaced]
+    for old in replaced:
+        db.delete(old)
+
+    image.status = models.ImageStatus.READY
+    image.photo_key = photo_key
+    image.content_type = content_type
+    image.size_bytes = size_bytes
+    image.processed_at = datetime.now(timezone.utc)
+    db.commit()
+    return replaced_keys
+
+
+# files
+
+def add_files(db: Session, rows: list[models.File]) -> list[models.File]:
+    """One transaction for the whole batch, so a multi-file upload is indexed
+    all or not at all."""
+    db.add_all(rows)
+    db.commit()
+    for row in rows:
+        db.refresh(row)
+    return rows
+
+
+def get_file(db: Session, file_id: int) -> File | None:
+    return db.query(models.File).filter(models.File.id == file_id).first()
+
+
+def list_files(
+    db: Session,
+    user_id: int | None = None,
+    content_type: str | None = None,
+    name: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[type[File]]:
+    query = db.query(models.File)
+
+    if user_id is not None:
+        query = query.filter(models.File.user_id == user_id)
+
+    if content_type:
+        query = query.filter(models.File.content_type == content_type)
+
+    if name:
+        query = query.filter(models.File.original_filename.ilike(f"%{name}%"))
+
+    return (
+        query.order_by(models.File.uploaded_at.desc(), models.File.id.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+
+def delete_file(db: Session, row: models.File) -> None:
+    db.delete(row)
+    db.commit()
+
+
+# users
+
+def create_user(db: Session, user: schemas.UserCreate) -> User:
+    # Currently we will allow anyone to create an account with any access level
+    salt = os.urandom(16)
+    digest = scrypt(user.password.encode(), salt=salt, n=2**10, r=8, p=1) # in prod n >= 2**16
+    row = models.User(
+        display_name=user.display_name,
+        real_name=user.real_name,
+        is_admin=user.is_admin,
+        # The salt is kept so a password can be checked once login exists.
+        password_hash=f"{salt.hex()}${digest.hex()}",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_user(db: Session, user_id: int) -> User | None:
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+
+def list_users(db: Session, limit: int = 100, offset: int = 0) -> list[type[User]]:
+    query = db.query(models.User)
+    return query.order_by(models.User.id).limit(limit).offset(offset).all()

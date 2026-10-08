@@ -15,7 +15,7 @@ Every non-2xx response, without exception, looks like this:
 }
 ```
 
-Routes stay in the shape you already write — `APIError` is an `HTTPException`
+Routes stay in the shape you already write - `APIError` is an `HTTPException`
 with one extra argument:
 
 ```python
@@ -45,49 +45,56 @@ a hostname.
 
 The rule that settles the ambiguous cases:
 
-- **422** — we cannot process the values that were sent. Malformed payload, or
+- **422** - we cannot process the values that were sent. Malformed payload, or
   values wrong on their face regardless of what is in the database (an item
   matched with itself, a `lost_item_id` pointing at a found post).
-- **409** — the values are fine; the *current state* forbids the action. The
+- **409** - the values are fine; the *current state* forbids the action. The
   item is already matched, the location is retired, a row still references it.
-- **404** — a resource named in the request does not exist, no matter where the
+- **404** - a resource named in the request does not exist, no matter where the
   id came from. `POST /matches` with an unknown `lost_item_id` is a 404, not a
   422, so the frontend has one rule to learn.
 
 409 was the one genuinely missing code in the draft. Without it, "this item is
 already matched" and "the name field is empty" both arrive as 422 and the
-frontend cannot tell them apart — one is fixable by editing the form, the other
+frontend cannot tell them apart - one is fixable by editing the form, the other
 is not.
 
 ## Full table
 
 | Status | Code | Raised when |
 |---|---|---|
-| 401 | `UNAUTHENTICATED` | Admin route, no credentials |
-| 403 | `FORBIDDEN` | Signed in, not an admin |
+| 401 | `UNAUTHENTICATED` | Admin route, no `X-Admin-Token` header |
+| 403 | `FORBIDDEN` | Admin route, wrong `X-Admin-Token` |
 | 404 | `NOT_FOUND` | Unknown route |
-| 404 | `ITEM_NOT_FOUND` / `MATCH_NOT_FOUND` / `LOCATION_NOT_FOUND` | Referenced row missing |
+| 400 | `UNSUPPORTED_FILE_TYPE` | A `/files` upload whose bytes are not JPEG, PNG, WebP, HEIC or PDF, whatever the client claimed |
+| 404 | `ITEM_NOT_FOUND` / `MATCH_NOT_FOUND` / `LOCATION_NOT_FOUND` / `IMAGE_NOT_FOUND` / `USER_NOT_FOUND` / `FILE_NOT_FOUND` | Referenced row missing |
 | 405 | `METHOD_NOT_ALLOWED` | Wrong verb on a real path |
 | 409 | `ITEM_NOT_OPEN` | Matching an item that is not `open` |
 | 409 | `ITEM_HAS_MATCHES` | Hard-deleting an item that is in a match |
-| 409 | `ITEM_CLOSED` | Editing a `returned` post |
+| 409 | `ITEM_CLOSED` | Editing, or adding a photo to, a `returned` post |
 | 409 | `INVALID_STATUS_TRANSITION` | e.g. `open` → `returned` |
 | 409 | `MATCH_ALREADY_EXISTS` | Duplicate pair (`uq_matches_item_pair`) |
 | 409 | `LOCATION_INACTIVE` | Posting to a retired location |
 | 409 | `LOCATION_IN_USE` | Hard-deleting a location that has items |
 | 409 | `LOCATION_NAME_TAKEN` | Duplicate location name |
+| 409 | `USER_NAME_TAKEN` | Duplicate user display name |
+| 409 | `UPLOAD_NOT_RECEIVED` | Completing a photo upload before the file was PUT to `upload_url` |
+| 413 | `FILE_TOO_LARGE` | A `/files` upload over 10 MB, or a request over the gateway's 51 MB cap |
+| 413 | `TOO_MANY_FILES` | More than 5 files in one `/files/batch` request |
 | 422 | `VALIDATION_ERROR` | Pydantic rejected the payload; `fields` populated |
 | 422 | `ITEM_TYPE_MISMATCH` | A match side points at the wrong `type` |
 | 422 | `MATCH_SELF` | `lost_item_id == found_item_id` |
 | 422 | `EMPTY_UPDATE` | PATCH body changes nothing |
 | 500 | `INTERNAL_ERROR` | Anything unexpected; fixed generic message |
 | 503 | `SERVICE_UNAVAILABLE` | `OperationalError` / `InterfaceError` from psycopg |
+| 503 | `STORAGE_UNAVAILABLE` | Any error from the object store (botocore) |
 
 ## Success codes
 
-- **200** — retrieved or updated.
-- **201** — created; body is the new resource.
-- **204** — withdrawn, unmatched, or retired; no body. `DELETE /items/{id}` is
+- **200** - retrieved or updated.
+- **201** - created; body is the new resource.
+- **202** - accepted for background processing (`.../images/{upload_id}/complete`).
+- **204** - withdrawn, unmatched, or retired; no body. `DELETE /items/{id}` is
   idempotent, so withdrawing an already-withdrawn item is still a 204.
 
 ## Every constraint is checked twice
@@ -96,7 +103,7 @@ Each uniqueness and FK rule is checked in Python *and* caught as an
 `IntegrityError` on commit. The Python check exists to produce a decent
 message; the `try/except IntegrityError` exists because the check has a race
 window between the SELECT and the INSERT. Two users matching the same pair at
-the same instant both pass the check, and the loser hits the unique index —
+the same instant both pass the check, and the loser hits the unique index -
 with the except clause they still get `409 MATCH_ALREADY_EXISTS` instead of a
 500.
 

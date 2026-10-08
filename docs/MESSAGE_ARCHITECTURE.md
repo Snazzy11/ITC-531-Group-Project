@@ -3,8 +3,8 @@
 ## How it works
 
 Requests go through the gateway to the API. RabbitMQ holds messages until a
-worker picks them up. The queues and event subscribers are set up, but the API
-is not connected to them yet.
+worker picks them up. The API publishes image jobs and item events; nothing
+publishes matching jobs or match events yet.
 
 ```text
 Client -> gateway (localhost:8000) -> API (internal port 8000)
@@ -26,11 +26,14 @@ RabbitMQ stores its data in the brokerdata volume.
 Each job goes through the default exchange. Its routing key is the queue name.
 
 - `publish_matching_job` sends `{"item_id": 42}` to `jobs.item_matcher`, which is both the queue name and routing key. `matching_worker` reads from this queue.
-- `publish_image_job` sends `{"item_id": 42, "image_ref": "test-image.jpg"}` to `jobs.image_processor`, which is both the queue name and routing key. `image_worker` reads from this queue.
+- `publish_image_job` sends `{"item_id": 42, "image_ref": "<upload_id>"}` to `jobs.image_processor`, which is both the queue name and routing key. The API sends it from `POST /items/{item_id}/images/{upload_id}/complete`. `image_worker` reads from this queue.
 
-Both workers check the message, log that they received it, and then acknowledge
-it. An acknowledgment tells RabbitMQ it can remove the message. Matching and
-image processing are not implemented yet.
+Both workers check the message and acknowledge it when they are done. An
+acknowledgment tells RabbitMQ it can remove the message. `matching_worker` only
+logs the job; matching is not implemented yet. `image_worker` checks and
+re-encodes the upload and records the result in Postgres (see
+`milestones/milestone4/STORAGE_DESIGN.md`). A rejected upload is still acknowledged, since retrying it
+would give the same result.
 
 Item IDs must be positive integers. `image_ref` must be a string that is not empty
 or just spaces.
@@ -54,6 +57,10 @@ Every event has these fields:
 - `item.withdrawn`: payload fields are `item_id`. Sent to `events.logger`.
 - `match.potential_found`: payload fields are `lost_item_id`, `found_item_id`, `score`. Sent to `events.logger`, `events.notifier`.
 - `match.confirmed`: payload fields are `match_id`, `lost_item_id`, `found_item_id`. Sent to `events.logger`, `events.notifier`.
+
+The API publishes `item.created`, `item.updated`, and `item.withdrawn` after the
+change is saved. This is best-effort: if the broker is down, the API logs a
+warning and the request still succeeds, so an event can be lost.
 
 All payload IDs must be positive integers. The score must be between 0 and 1.
 The source cannot be blank, and extra fields are rejected. The models are in
