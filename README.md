@@ -12,13 +12,13 @@ cd ITC-531-Group-Project
 ```
 Copy `.env.local` and fill it in: `cp .env.local.example .env.local`
 
-| Variable | What to put |
-|---|---|
-| `BROKER_USER`, `BROKER_PASSWORD` | Any username and password; compose creates that RabbitMQ user |
-| `JWT_SECRET` | Required. Signs login tokens. Generate one with `openssl rand -hex 32`. The app will not start without it |
+| Variable                               | What to put |
+|----------------------------------------|---|
+| `BROKER_USER` & `BROKER_PASSWORD`      | Any username and password; compose creates that RabbitMQ user |
+| `JWT_SECRET`                           | Required. Signs login tokens. Generate one with `openssl rand -hex 32`. The app will not start without it |
 | `ADMIN_DISPLAY_NAME`, `ADMIN_PASSWORD` | Needed to use any admin route (managing locations, hard deletes, listing users). The app creates this admin account on startup. Display name up to 50 characters, password up to 72 bytes. See [Authentication](#authentication) |
 
-Copy the store env; the defaults will work: `cp store.env.example store.env`
+Copy the store env file, the defaults there will work: `cp store.env.example store.env`
 
 Bring the container up and test it:
 ```sh
@@ -40,9 +40,12 @@ this: `users.is_admin` is gone and the `roles` tables are new.)
 
 ## First requests
 
-Reading is public. Anything that writes needs you to sign in first: you register,
-log in for a token, and send the token with each request (details in
-[Authentication](#authentication)). `jq` is used to pull the token out.
+Reading the API is almost always public. Anything that writes needs signed in account.
+You must register if needed, log in for a token, and send the token with each request.
+More details in [Authentication](#authentication)). `jq` is used to pull the token out.
+
+`ADMIN_DISPLAY_NAME` and `ADMIN_PASSWORD` are the values from `.env.local`. You will 
+need to export them in your shell before running this.
 
 ```sh
 API=http://localhost:8000/api/v1
@@ -64,9 +67,6 @@ curl -X POST $API/items -H "$USER" -H 'Content-Type: application/json' \
   -d '{"name":"Blue umbrella","type":1,"location_id":1}'   # type: 0 = lost, 1 = found
 ```
 
-(`ADMIN_DISPLAY_NAME` and `ADMIN_PASSWORD` are the values from `.env.local`; export
-them in your shell first.)
-
 To add a photo or upload a file, see `milestones/milestone4/README.md`, which
 has a runnable command for every endpoint.
 
@@ -86,34 +86,23 @@ With the stack running:
 
 ## How it works
 
-1. **Register.** `POST /users` with a `display_name` (6-50 characters, unique),
-   `real_name` and `password` (6-100 characters, at most 72 bytes, which is
-   bcrypt's limit). Everyone who registers gets the `user` role. A client cannot
-   pick its own role; sending `is_admin` or any other unknown field is a 422.
-2. **Log in.** `POST /auth/login` with a form body (`-d 'username=...&password=...'`,
-   not JSON, because that is the OAuth2 password-flow shape that `/docs` also
-   uses). `username` is the display name. You get back
-   `{"access_token": "...", "token_type": "bearer", "expires_in": 1800}`.
-   A wrong name and a wrong password give the same 401, so it cannot be used to find out
-   which names exist.
-3. **Send the token** on every request that needs it: `Authorization: Bearer <token>`.
-   The token is a signed JWT (HS256, signed with `JWT_SECRET`) that lasts 30
-   minutes and holds the user's **id** as its subject. There is no refresh or
-   logout; log in again when it expires.
-4. **Every request re-checks the user.** The server loads the user from the
-   database from the token's id each time, so a user who is deleted or has
-   `is_active` set to false stops working immediately, and role changes apply on
-   the next request instead of when the token expires.
-5. **Roles.** `user` (everyone) and `admin`. The admin account comes from
-   `ADMIN_DISPLAY_NAME` and `ADMIN_PASSWORD` in `.env.local`, applied every time
-   the app starts: the account is created if it does not exist, or given the
-   admin role if it does. (The password is only used when creating it; changing
-   the variable later does not change an existing account's password.) There is
-   deliberately no API for making someone an admin.
+1. **Registering** `POST /users` with a `display_name`, `real_name` and `password`. New accounts get the `user` role and you cant pick a different one
+2. **Logging in** `POST /auth/login` with a form body: `-d 'username=...&password=...'`
+    where `username` is the display name. It will return something like
+   `{"access_token": "...", "token_type": "bearer", "expires_in": 1800}`. 
+   1. A wrong name or a wrong password both return 401 so you cannot gain information by spamming fake logins.
+3. **Send back the token on every request that needs an account**
+   1. `Authorization: Bearer <token>`. The token is a signed JWT (HS256 signed by `JWT_SECRET`) that lasts 30
+      minutes and holds the user's **id** as 'subject'. There logout endpoint or refresh endpoint for now, just log in again when needed.
+   2. The API is RESTful so you have to send the token on every request
+4. **Roles** `user` applies to everyone, and `admin` should be restricted. The default admin account comes from
+   the settings `.env.local` and is created every time the app starts up. 
+   There is no API for making someone an admin at this time.
 
 Passwords are stored as bcrypt hashes (`app/password_util.py`) and are never
-returned by any endpoint. Cost is 10, which is low on purpose for a course
-project. Token code is in `app/tokens.py`.
+returned by any endpoint. In this app the `cost` setting is 10, which is low on purpose because our
+app should never reach production, and it can be changed easily. 12 is the minimum recommendation for
+real security.
 
 In `/docs`, the **Authorize** button takes the token from the login endpoint.
 If it cannot log in from there, get a token with the curl above and paste it in.
@@ -147,42 +136,27 @@ Everything you need is in `app/auth.py`. Import from `auth`, never from `api`
 (`api.py` imports every router, so importing it back is a circular import).
 
 ```python
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-
-import errors
-from auth import admin, current_user, login_required, require_owner_or_admin
-from database.database import get_db
-from database.models import User
-from errors import APIError
-
-router = APIRouter(tags=["things"])
-
-
-# Anyone can read: add nothing.
+# No roles needed for reading
 @router.get("/things/{thing_id}")
 def get_thing(thing_id: int, db: Session = Depends(get_db)): ...
 
-
-# Signed in, and you need to know who: take the user as a parameter.
+# For things you need to be signed in for and you need to know ownership of entities
+# Use user as paramter
 @router.post("/things", status_code=201, responses=errors.errors(401, 422))
 def create_thing(body: schemas.ThingCreate, user: User = Depends(current_user),
                  db: Session = Depends(get_db)):
     return crud.create_thing(db, body, owner_id=user.id)   # the owner is user.id
 
-
-# Signed in, and who doesn't matter: use the shortcut.
+# For things you need to be signed in for but dont need advanced info, just use login_required
 @router.post("/things/ping", dependencies=[login_required], responses=errors.errors(401))
 def ping(): ...
 
-
-# Admins only.
+# Admin only endpoints, depend on admin
 @router.delete("/things/{thing_id}/hard", status_code=204, dependencies=[admin],
                responses=errors.errors(401, 403, 404))
 def hard_delete_thing(thing_id: int, db: Session = Depends(get_db)): ...
 
-
-# The owner or an admin: load the row, 404 if it's missing, then check.
+# When you need ownership or admin role: load the row, 404 if it's missing, then check admin
 @router.patch("/things/{thing_id}", responses=errors.errors(401, 403, 404))
 def update_thing(thing_id: int, body: schemas.ThingUpdate,
                  user: User = Depends(current_user), db: Session = Depends(get_db)):
