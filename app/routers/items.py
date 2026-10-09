@@ -12,7 +12,8 @@ import presenters
 import schemas
 from database import models
 from database.database import get_db
-from dependencies import admin
+from auth import admin, current_user, require_owner_or_admin
+from database.models import User
 from errors import APIError
 from ports import storage
 
@@ -25,11 +26,14 @@ router = APIRouter(tags=["items"])
     "/items",
     response_model=schemas.ItemResponse,
     status_code=201,
-    responses=errors.errors(404, 409, 422),
+    responses=errors.errors(401, 404, 409, 422),
 )
-def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db)):
-    if crud.get_user(db, item.user_id) is None:
-        raise APIError(404, errors.USER_NOT_FOUND, "user not found")
+def create_item(
+    item: schemas.ItemCreate,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """The poster is the signed-in user."""
     location = crud.get_location(db, item.location_id)
     if location is None:
         raise APIError(404, errors.LOCATION_NOT_FOUND, "location not found")
@@ -37,7 +41,7 @@ def create_item(item: schemas.ItemCreate, db: Session = Depends(get_db)):
         raise APIError(
             409, errors.LOCATION_INACTIVE, "that location has been retired"
         )
-    row = crud.create_item(db, item)
+    row = crud.create_item(db, item, user.id)
     messaging.emit("item.created", row.id)
     return presenters.item_out(row)
 
@@ -81,12 +85,18 @@ def get_item(item_id: int, db: Session = Depends(get_db)):
 @router.patch(
     "/items/{item_id}",
     response_model=schemas.ItemResponse,
-    responses=errors.errors(404, 409, 422),
+    responses=errors.errors(401, 403, 404, 409, 422),
 )
-def update_item(item_id: int, changes: schemas.ItemUpdate, db: Session = Depends(get_db)):
+def update_item(
+    item_id: int,
+    changes: schemas.ItemUpdate,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     item = crud.get_item(db, item_id)
     if item is None:
         raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
+    require_owner_or_admin(user, item.user_id)
 
     # exclude_unset keeps "field omitted" distinguishable from "field set to
     # null", which a plain model_dump() would collapse.
@@ -112,14 +122,18 @@ def update_item(item_id: int, changes: schemas.ItemUpdate, db: Session = Depends
 @router.patch(
     "/items/{item_id}/status",
     response_model=schemas.ItemResponse,
-    responses=errors.errors(404, 409, 422),
+    responses=errors.errors(401, 403, 404, 409, 422),
 )
 def update_item_status(
-    item_id: int, change: schemas.ItemStatusUpdate, db: Session = Depends(get_db)
+    item_id: int,
+    change: schemas.ItemStatusUpdate,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
 ):
     item = crud.get_item(db, item_id)
     if item is None:
         raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
+    require_owner_or_admin(user, item.user_id)
 
     new_status = models.ItemStatus(change.status)
     if new_status == item.status:
@@ -142,13 +156,18 @@ def update_item_status(
     return presenters.item_out(item)
 
 
-@router.delete("/items/{item_id}", status_code=204, responses=errors.errors(404, 409))
-def withdraw_item(item_id: int, db: Session = Depends(get_db)):
+@router.delete(
+    "/items/{item_id}", status_code=204, responses=errors.errors(401, 403, 404, 409)
+)
+def withdraw_item(
+    item_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     """Soft delete: sets status to 'withdrawn' and hides the post from search.
     Idempotent - withdrawing an already-withdrawn item is still a 204."""
     item = crud.get_item(db, item_id)
     if item is None:
         raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
+    require_owner_or_admin(user, item.user_id)
     if item.status is not models.ItemStatus.WITHDRAWN:
         if models.ItemStatus.WITHDRAWN not in crud.CLIENT_TRANSITIONS[item.status]:
             raise APIError(

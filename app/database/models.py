@@ -11,11 +11,11 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
-    UniqueConstraint,
+    Table, UniqueConstraint,
     and_,
     true,
 )
-from sqlalchemy.orm import Mapped, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from database.database import Base
@@ -40,6 +40,17 @@ class ImageStatus(str, enum.Enum):
     READY = "ready"
     REJECTED = "rejected"
 
+user_roles = Table(
+    "user_roles",
+    Base.metadata,
+    Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("role_id", ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
+)
+
+class Role(Base):
+    __tablename__ = "roles"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, index=True)
 
 class User(Base):
     __tablename__ = "users"
@@ -48,7 +59,8 @@ class User(Base):
     real_name = Column(String(50), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     password_hash = Column(String(255), nullable=False) # TODO change later
-    is_admin = Column(Boolean, nullable=False)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    roles: Mapped[list[Role]] = relationship(secondary=user_roles, lazy="selectin")
 
     items = relationship("Item", back_populates="user_id_relation")
 

@@ -12,15 +12,17 @@ import logging
 import uuid
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
 import crud
 import errors
 import image_processing
 import schemas
+from auth import current_user, is_admin, require_owner_or_admin
 from database import models
 from database.database import get_db
+from database.models import User
 from errors import APIError
 from ports import storage
 
@@ -75,8 +77,6 @@ def discard(keys: list[str]) -> None:
 
 
 def save(db: Session, user_id: int, uploads: list[UploadFile]) -> list[models.File]:
-    if crud.get_user(db, user_id) is None:
-        raise APIError(404, errors.USER_NOT_FOUND, "user not found")
     # Every file passes before any of them is written.
     checked = [check(upload) for upload in uploads]
 
@@ -107,33 +107,37 @@ def save(db: Session, user_id: int, uploads: list[UploadFile]) -> list[models.Fi
     "",
     response_model=schemas.FileResponse,
     status_code=201,
-    responses=errors.errors(400, 404, 413, 422, 503),
+    responses=errors.errors(400, 401, 413, 422, 503),
 )
 def upload_file(
-    file: UploadFile, user_id: int = Form(gt=0), db: Session = Depends(get_db)
+    file: UploadFile, user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
-    return save(db, user_id, [file])[0]
+    """The file belongs to the signed-in user."""
+    return save(db, user.id, [file])[0]
 
 
 @router.post(
     "/batch",
     response_model=list[schemas.FileResponse],
     status_code=201,
-    responses=errors.errors(400, 404, 413, 422, 503),
+    responses=errors.errors(400, 401, 413, 422, 503),
 )
 def upload_files(
-    files: list[UploadFile], user_id: int = Form(gt=0), db: Session = Depends(get_db)
+    files: list[UploadFile], user: User = Depends(current_user), db: Session = Depends(get_db)
 ):
     """All or nothing: one bad file and none of them are stored."""
     if len(files) > MAX_FILES:
         raise APIError(413, errors.TOO_MANY_FILES, f"at most {MAX_FILES} files per request")
-    return save(db, user_id, files)
+    return save(db, user.id, files)
 
 
-@router.get("", response_model=list[schemas.FileResponse])
+@router.get("", response_model=list[schemas.FileResponse], responses=errors.errors(401))
 def list_files(
+    user: User = Depends(current_user),
     db: Session = Depends(get_db),
-    user_id: int | None = Query(default=None, gt=0),
+    user_id: int | None = Query(
+        default=None, gt=0, description="Admins only; everyone else sees just their own files"
+    ),
     content_type: str | None = Query(default=None, max_length=100),
     name: str | None = Query(
         default=None, max_length=100, description="Part of the original filename"
@@ -141,29 +145,37 @@ def list_files(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
+    if not is_admin(user):
+        user_id = user.id
     return crud.list_files(
         db, user_id=user_id, content_type=content_type, name=name, limit=limit, offset=offset
     )
 
 
-@router.get("/{file_id}", response_model=schemas.FileResponse, responses=errors.errors(404))
-def get_file(file_id: int, db: Session = Depends(get_db)):
+@router.get(
+    "/{file_id}", response_model=schemas.FileResponse, responses=errors.errors(401, 403, 404)
+)
+def get_file(file_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     row = crud.get_file(db, file_id)
     if row is None:
         raise APIError(404, errors.FILE_NOT_FOUND, "file not found")
+    require_owner_or_admin(user, row.user_id)
     return row
 
 
 @router.get(
     "/{file_id}/content",
     response_class=Response,
-    responses={200: {"content": {t: {} for t in ALLOWED_TYPES}}, **errors.errors(404, 503)},
+    responses={200: {"content": {t: {} for t in ALLOWED_TYPES}}, **errors.errors(401, 403, 404, 503)},
 )
-def download_file(file_id: int, db: Session = Depends(get_db)):
+def download_file(
+    file_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     """The bytes, with the content type recorded at upload."""
     row = crud.get_file(db, file_id)
     if row is None:
         raise APIError(404, errors.FILE_NOT_FOUND, "file not found")
+    require_owner_or_admin(user, row.user_id)
     data = storage.read(row.key, MAX_FILE_BYTES)
     if data is None:
         log.error("file %s has a row but no object at %s", row.id, row.key)
@@ -178,11 +190,12 @@ def download_file(file_id: int, db: Session = Depends(get_db)):
     )
 
 
-@router.delete("/{file_id}", status_code=204, responses=errors.errors(404))
-def delete_file(file_id: int, db: Session = Depends(get_db)):
+@router.delete("/{file_id}", status_code=204, responses=errors.errors(401, 403, 404))
+def delete_file(file_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     row = crud.get_file(db, file_id)
     if row is None:
         raise APIError(404, errors.FILE_NOT_FOUND, "file not found")
+    require_owner_or_admin(user, row.user_id)
     key = row.key
     crud.delete_file(db, row)
     # row is already gone, so if this fails it just leaves an extra object

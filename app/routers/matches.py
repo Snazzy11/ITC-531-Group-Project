@@ -6,6 +6,7 @@ import crud
 import errors
 import schemas
 from database.database import get_db
+from auth import login_required
 from errors import APIError
 from database import models
 
@@ -16,7 +17,8 @@ router = APIRouter(tags=["matches"])
     "/matches",
     response_model=schemas.MatchResponse,
     status_code=201,
-    responses=errors.errors(404, 409, 422),
+    dependencies=[login_required],
+    responses=errors.errors(401, 404, 409, 422),
 )
 def create_match(match: schemas.MatchCreate, db: Session = Depends(get_db)):
     """Pairs a lost post with a found post and moves both to 'matched'."""
@@ -97,7 +99,12 @@ def matches_by_item(item_id: int, db: Session = Depends(get_db)):
 # new pair validated again, so we use DELETE + POST.
 
 
-@router.delete("/matches/{match_id}", status_code=204, responses=errors.errors(404))
+@router.delete(
+    "/matches/{match_id}",
+    status_code=204,
+    dependencies=[login_required],
+    responses=errors.errors(401, 404),
+)
 def delete_match(match_id: int, db: Session = Depends(get_db)):
     """Unmatch. Neither item is deleted; both go back to 'open' unless one has
     already been marked 'returned'."""
