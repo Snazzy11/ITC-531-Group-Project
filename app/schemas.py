@@ -35,8 +35,6 @@ class ItemBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
     location_id: int = Field(gt=0)
-    # Taken on trust until login exists; then it comes from the signed-in user.
-    user_id: int = Field(gt=0)
 
 
 class ItemCreate(ItemBase):
@@ -66,6 +64,7 @@ class ItemResponse(ItemBase):
     model_config = RESPONSE
 
     id: int
+    user_id: int  # the poster; set from the login token, never from the client
     type: Literal[0, 1]
     status: ItemStatus
     created_at: datetime

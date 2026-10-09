@@ -6,6 +6,7 @@ import crud
 import errors
 import schemas
 from database.database import get_db
+from auth import admin
 from errors import APIError
 from password_util import PasswordTooLongError
 
@@ -29,7 +30,12 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
             409, errors.USER_NAME_TAKEN, "a user with that display name already exists"
         ) from None
 
-@router.get("/users", response_model=list[schemas.UserResponse])
+@router.get(
+    "/users",
+    response_model=list[schemas.UserResponse],
+    dependencies=[admin],
+    responses=errors.errors(401, 403),
+)
 def list_users(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=200),

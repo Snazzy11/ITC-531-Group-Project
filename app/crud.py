@@ -35,9 +35,9 @@ EDITABLE_STATUSES = {
 
 # items
 
-def create_item(db: Session, item: schemas.ItemCreate) -> models.Item:
+def create_item(db: Session, item: schemas.ItemCreate, user_id: int) -> models.Item:
     # status is not passed: the column defaults to 'open'.
-    row = models.Item(**item.model_dump())
+    row = models.Item(**item.model_dump(), user_id=user_id)
     db.add(row)
     db.commit()
     db.refresh(row)

@@ -40,3 +40,22 @@ def require_role(*allowed: str):
         return user
 
     return dependency
+
+
+login_required = Depends(current_user)
+"""Use as `dependencies=[login_required]` when the route only needs to know
+someone is signed in, not who."""
+
+admin = Depends(require_role("admin"))
+"""Use as `dependencies=[admin]` on a route that only admins may call."""
+
+
+def is_admin(user: User) -> bool:
+    return any(r.name == "admin" for r in user.roles)
+
+
+def require_owner_or_admin(user: User, owner_id: int) -> None:
+    """Call inside a route once the row is loaded: 403 unless `user` owns it
+    or is an admin."""
+    if user.id != owner_id and not is_admin(user):
+        raise APIError(403, errors.FORBIDDEN, "you do not own this resource")
