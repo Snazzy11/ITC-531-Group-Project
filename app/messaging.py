@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 
 import pika
 
 from events import build_event
+
+log = logging.getLogger("lostfound")
 
 MATCHING_QUEUE = "jobs.item_matcher"
 IMAGE_QUEUE = "jobs.image_processor"
@@ -188,3 +191,12 @@ if __name__ == "__main__":
     declare_event_exchange()
     declare_logger_queue()
     declare_notifier_queue()
+
+
+def emit(event_type: str, item_id: int) -> None:
+    """Events are notifications, not part of the change itself, so a broker
+    outage is logged and the request still succeeds."""
+    try:
+        publish_event(event_type, {"item_id": item_id})
+    except Exception as exc:
+        log.warning("could not publish %s for item %s: %s", event_type, item_id, exc)

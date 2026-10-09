@@ -235,7 +235,7 @@ async def handle_unexpected(request: Request, exc: Exception):
 
 
 def register_error_handlers(app: FastAPI) -> None:
-    """Called once from api.py"""
+    """Called once from api.py (app setup)"""
     app.add_exception_handler(StarletteHTTPException, handle_http_exception)
     app.add_exception_handler(RequestValidationError, handle_validation_error)
     app.add_exception_handler(OperationalError, handle_db_unavailable)

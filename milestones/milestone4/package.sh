@@ -22,9 +22,10 @@ STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 DEST=$STAGE/milestone4
 
-mkdir -p "$DEST/app/ports" "$DEST/app/database" "$DEST/scripts"
+mkdir -p "$DEST/app/ports" "$DEST/app/routers" "$DEST/app/database" "$DEST/scripts"
 cp -r milestones/milestone4/{README.md,STORAGE_DESIGN.md,PROVIDER_SHORTLIST.md,COST_AND_RISK.md,architecture-diagram.png,sources.md,adapters,evidence} "$DEST/"
-cp app/{files.py,api.py,crud.py,schemas.py,errors.py,image_processing.py,image_worker.py} "$DEST/app/"
+cp app/{api.py,dependencies.py,presenters.py,messaging.py,crud.py,schemas.py,errors.py,image_processing.py,image_worker.py} "$DEST/app/"
+cp app/routers/*.py "$DEST/app/routers/"
 cp app/ports/storage.py "$DEST/app/ports/"
 cp app/database/models.py "$DEST/app/database/"
 cp scripts/storage_report.py "$DEST/scripts/"

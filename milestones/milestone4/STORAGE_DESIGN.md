@@ -5,7 +5,7 @@ We store two kinds of objects:
 - Item photos. The client uploads straight to the store with a presigned PUT, then `image_worker` checks and re-encodes it. The API never touches the photo bytes.
 - User files. These are things a user keeps on hand to prove an item is theirs when they claim it, like a receipt or a picture of a serial number. These go through the API (`/files`), which checks each file before anything gets written.
 
-The code is in `app/ports/storage.py` (the only module that talks to the store), `app/files.py` (file endpoints), `app/api.py` (photo endpoints), and `app/image_worker.py` / `app/image_processing.py` (photo checks and re-encoding). The diagram is `architecture-diagram.png`.
+The code is in `app/ports/storage.py` (the only module that talks to the store), `app/routers/files.py` (file endpoints), `app/routers/images.py` (photo endpoints), and `app/image_worker.py` / `app/image_processing.py` (photo checks and re-encoding). The diagram is `architecture-diagram.png`.
 
 Every item photo gets re-encoded to a fixed size, a JPEG that is at most 1280px on its longest side. Each item only has one photo, and a new upload replaces it. This is destructive, since once the new photo is written the original upload is erased. In a real app we would probably want a thumbnail and a high resolution copy for inspecting, but this is a good balance for us for now.
 
