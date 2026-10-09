@@ -18,9 +18,9 @@ item called "".
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from database.models import ImageStatus, ItemStatus
 
@@ -164,9 +164,16 @@ class UserBase(BaseModel):
     display_name: str = Field(min_length=6, max_length=50)
     real_name: str = Field(min_length=2, max_length=50)
 
-class UserCreate(UserBase): # Currently we will allow anyone to create an account with any access level
+# Characters here; password_util re-checks in bytes (see the comment there).
+# strip_whitespace=False overrides REQUEST: the password must be stored exactly
+# as typed, because login does not strip it. 72 characters is never more than
+# the 72-byte limit allows, so this max cannot reject a password bcrypt accepts.
+Password = Annotated[str, StringConstraints(strip_whitespace=False, min_length=6, max_length=72)]
+
+
+class UserCreate(UserBase):  # No role field: everyone registers as a plain user
     model_config = REQUEST
-    password: str = Field(min_length=6, max_length=100)
+    password: Password
     
 class RoleOut(BaseModel):
     model_config = RESPONSE

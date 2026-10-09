@@ -90,7 +90,9 @@ With the stack running:
 2. **Logging in** `POST /auth/login` with a form body: `-d 'username=...&password=...'`
     where `username` is the display name. It will return something like
    `{"access_token": "...", "token_type": "bearer", "expires_in": 1800}`. 
-   1. A wrong name or a wrong password both return 401 so you cannot gain information by spamming fake logins.
+   1. A wrong name or a wrong password both return the same 401 and message so you cannot gain information by spamming fake logins.
+      We also make sure bcrypt runs even when the account/password doesnt exist, so an unknown account is not
+      responded to faster.
 3. **Send back the token on every request that needs an account**
    1. `Authorization: Bearer <token>`. The token is a signed JWT (HS256 signed by `JWT_SECRET`) that lasts 30
       minutes and holds the user's **id** as 'subject'. There logout endpoint or refresh endpoint for now, just log in again when needed.
@@ -100,9 +102,20 @@ With the stack running:
    There is no API for making someone an admin at this time.
 
 Passwords are stored as bcrypt hashes (`app/password_util.py`) and are never
-returned by any endpoint. In this app the `cost` setting is 10, which is low on purpose because our
+returned by any endpoint. In this app the `cost` setting is 10 (chosen in 2026), which is low on purpose because our
 app should never reach production, and it can be changed easily. 12 is the minimum recommendation for
 real security.
+
+Passwords are 6-72 characters and at most 72 **bytes** (bcrypt's limit). Longer ones are rejected with a 422, never
+truncated, because truncating would make two different passwords that share their first 72 bytes verify as each other.
+The schema counts characters (an early, field-level error) and `hash_password` re-checks in bytes (the unit bcrypt limits in);
+the reasoning is in `app/password_util.py`. Passwords are stored exactly as typed, with no whitespace stripping.
+
+No auth secret has a default. `JWT_SECRET` must be set, at least 32 bytes; if it is missing, empty or short the app
+refuses to start with `JWT_SECRET is not set...`. The only credentials committed to the repo are the local-only dev
+ones for the Postgres and RustFS containers in `compose.yml` and `store.env.example`
+(`seekr-devonly`). Those services publish ports to your machine (5432 and 9000), so only run the
+stack on a trusted network, and replace these credentials for any real deployment.
 
 In `/docs`, the **Authorize** button takes the token from the login endpoint.
 If it cannot log in from there, get a token with the curl above and paste it in.

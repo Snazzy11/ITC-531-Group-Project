@@ -76,6 +76,12 @@ c.post("/users", json={"display_name": "tester2", "real_name": "Other User", "pa
 U = login("tester1", "secret123")   # the poster
 V = login("tester2", "secret123")   # a different user
 show("login user", c.post("/auth/login", data={"username": "tester1", "password": "secret123"}), 200)
+c.post("/users", json={"display_name": "spaced-user", "real_name": "Spaced", "password": "  edge  "})
+show("login keeps password spaces", c.post("/auth/login", data={"username": "spaced-user", "password": "  edge  "}), 200)
+show("login w/ spaces stripped fails", c.post("/auth/login", data={"username": "spaced-user", "password": "edge"}), 401)
+import jwt, tokens  # noqa: E402
+no_exp = jwt.encode({"sub": str(uid)}, tokens.SECRET, algorithm=tokens.ALGORITHM)
+show("token without exp rejected", c.get("/auth/me", headers={"Authorization": "Bearer " + no_exp}), 401)
 show("list users no auth", c.get("/users"), 401)
 show("list users as user", c.get("/users", headers=U), 403)
 if "password" in show("list users as admin", c.get("/users", headers=A), 200).text:
