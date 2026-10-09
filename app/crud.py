@@ -354,22 +354,44 @@ def create_user(db: Session, user: schemas.UserCreate, role: str = "user") -> Us
     return row
 
 
+ROLE_NAMES = ("user", "admin")
+
+
+def grant_role(db: Session, user: User, role_name: str) -> bool:
+    """Adds the role if the user lacks it. Returns True if anything changed, so
+    running it twice is harmless."""
+    role = get_or_create_role(db, role_name)
+    if role in user.roles:
+        return False
+    user.roles.append(role)
+    return True
+
+
+def revoke_role(db: Session, user: User, role_name: str) -> bool:
+    """Removes the role if the user has it. Returns True if anything changed."""
+    for role in user.roles:
+        if role.name == role_name:
+            user.roles.remove(role)
+            return True
+    return False
+
+
 def seed_auth(db: Session, admin_name: str | None, admin_password: str | None) -> None:
     """Idempotent startup step: make sure the roles exist and, when both
-    settings are given, that the bootstrap admin account exists."""
-    get_or_create_role(db, "user")
-    admin_role = get_or_create_role(db, "admin")
+    settings are given, that the bootstrap admin account exists. Roles are
+    otherwise handed out only by `python -m manage`, never by an endpoint."""
+    for name in ROLE_NAMES:
+        get_or_create_role(db, name)
     if admin_name and admin_password:
         existing = db.scalar(select(User).where(User.display_name == admin_name))
         if existing is None:
-            db.add(User(
+            existing = User(
                 display_name=admin_name,
                 real_name="Administrator",
                 password_hash=hash_password(admin_password),
-                roles=[admin_role],
-            ))
-        elif admin_role not in existing.roles:
-            existing.roles.append(admin_role)
+            )
+            db.add(existing)
+        grant_role(db, existing, "admin")
     db.commit()
 
 

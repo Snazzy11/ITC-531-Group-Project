@@ -99,7 +99,7 @@ With the stack running:
    2. The API is RESTful so you have to send the token on every request
 4. **Roles** `user` applies to everyone, and `admin` should be restricted. The default admin account comes from
    the settings `.env.local` and is created every time the app starts up. 
-   There is no API for making someone an admin at this time.
+   There is no API for making someone an admin at this time, and roles are assigned with a script (see [Authorization](#authorization)).
 
 Passwords are stored as bcrypt hashes (`app/password_util.py`) and are never
 returned by any endpoint. In this app the `cost` setting is 10 (chosen in 2026), which is low on purpose because our
@@ -142,6 +142,65 @@ A missing item is checked first, so asking for an item that doesn't exist is a
 
 The old `X-Admin-Token` header and the `ADMIN_TOKEN` setting have been removed
 and do nothing.
+
+## Authorization
+
+Authentication says *who* you are; this is what you are *allowed* to do.
+
+**Roles.** Two, stored in a many-to-many `users` <-> `roles` schema (`user_roles`), so a user can hold several
+and a new role is a new row, not a new column. `user` is everyone who registers: browse, post and manage
+their own items and files, match. `admin` also manages locations, hard-deletes items, lists every user, and
+may act on anyone's items and files. There is no `is_admin` flag.
+
+**Two kinds of check** (both in `app/auth.py`, see "Adding authentication" below):
+- a *role* check, `require_role("admin")` / `dependencies=[admin]`, chained on the authentication dependency;
+- an *ownership* check, `require_owner_or_admin(user, row.user_id)`, which needs no special role: the person
+  who posted an item can edit and withdraw it, and the person who uploaded a file can read and delete it.
+
+**401 vs 403, in our words.** A **401** means the server does not know who you are: no token, a token that is
+bad or expired, an account that no longer exists or is inactive, or a failed login. The fix is to log in
+(and every 401 carries `WWW-Authenticate: Bearer` saying so). A **403** means the server knows exactly who you
+are and the answer is still no: you are signed in but not an admin, or it is somebody else's item. Logging in
+again would change nothing, so the client should not retry, it should tell the user they can't do that. Keeping
+the two apart matters to a client: 401 means "show the login screen", 403 means "show a refusal". Every
+authentication failure is a 401 and every authorization failure is a 403, with no exceptions. One thing 403
+does reveal: asking for another user's file returns 403, not 404, so someone can tell that a file id exists.
+File ids are sequential numbers and the file itself is never exposed, so we accepted that.
+
+**How roles are assigned: by script, never by an endpoint.** We did **not** use "the first account to register
+becomes the admin", because that hands the admin role to whoever reaches a fresh deployment first. Instead:
+
+```sh
+docker compose --env-file .env.local exec app python -m manage grant-role alice-smith admin
+docker compose --env-file .env.local exec app python -m manage revoke-role alice-smith admin
+docker compose --env-file .env.local exec app python -m manage seed-roles
+```
+
+(`app/manage.py`.) Every command is idempotent: granting a role someone already has changes nothing and
+still exits 0; an unknown user exits 1. To get the first admin on a fresh stack without running anything, put
+`ADMIN_DISPLAY_NAME` and `ADMIN_PASSWORD` in `.env.local`; at startup the app runs the same code to create
+that account (or add the role to it if it already exists) and make sure both roles exist. Nothing in the API
+can grant a role, and `POST /users` rejects a `roles` field. Note that if you set `ADMIN_DISPLAY_NAME` to a name
+somebody has already registered, that person is made an admin at the next start.
+
+`scripts/authz_transcript.sh` prints a transcript of all of this: the four outcomes on an item (no token 401,
+signed in but not the owner 403, owner 200, admin 200), the admin-only `GET /users` (403, then 200), and the
+role script run twice.
+
+**Endpoints left open on purpose, and why each is safe.**
+
+| Endpoint | Why it is open, and why that is safe |
+|---|---|
+| `GET /health`, gateway `/healthz` | Health probes and the compose healthcheck carry no token. They return only `{"status":"ok"}`, or 503 when the database is down, and no data |
+| `POST /users` | Registration has to be open to anyone. It can only ever create an account with the plain `user` role (a `roles` or `is_admin` field is a 422), and the password is hashed before it is stored |
+| `POST /auth/login` | It is how you get a token. It answers the same message and takes the same time for an unknown name and a wrong password. Known gap: there is no rate limit or lockout |
+| `GET /items`, `GET /items/{id}`, `GET /items/{id}/matches`, `GET /matches`, `GET /matches/{id}` | Browsing lost and found posts is the whole point of the app. A post holds a name, description, location and the poster's numeric id, and no contact details or other personal data. Anything that changes them needs a token |
+| `GET /locations`, `GET /locations/{id}`, `GET /locations/{id}/items` | Campus building names, which are public reference data. Only admins can change them |
+| `GET /items/{id}/images/{upload_id}` | Shows the processing status of a photo that is already visible on the public item. The `upload_id` is a random uuid, and the photo URLs it returns are time-limited presigned links |
+| `/docs`, `/redoc`, `/openapi.json` | They describe the API and contain no data. In a real deployment we would turn them off |
+
+Everything else needs a token. If you would rather require a login just to browse, add
+`dependencies=[login_required]` to the `GET` routes and shrink this table.
 
 ## Adding authentication to a new endpoint
 

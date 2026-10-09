@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 import errors
 import schemas
-from auth import current_user
+from auth import current_user, unauthenticated
 from database.database import get_db
 from database.models import User
 from errors import APIError
@@ -26,7 +26,7 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
     usable = user is not None and user.is_active
     password_ok = verify_password(form.password, user.password_hash if usable else DUMMY_HASH)
     if not (usable and password_ok):
-        raise APIError(401, errors.UNAUTHENTICATED, "incorrect display name or password")
+        raise unauthenticated("incorrect display name or password")
     return schemas.TokenOut(
         access_token=create_access_token(str(user.id)), expires_in=TOKEN_MINUTES * 60
     )

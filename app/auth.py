@@ -16,18 +16,25 @@ from tokens import TokenError, read_access_token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 
+def unauthenticated(detail: str) -> APIError:
+    """401: the server does not know who you are. RFC 9110 requires a 401 to
+    say how to authenticate, hence the header. (403, below, is the other case:
+    it knows who you are and the answer is no.)"""
+    return APIError(401, errors.UNAUTHENTICATED, detail, headers={"WWW-Authenticate": "Bearer"})
+
+
 def current_user(
     token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> User:
     if not token:
-        raise APIError(401, errors.UNAUTHENTICATED, "not authenticated")
+        raise unauthenticated("not authenticated")
     try:
         user_id = int(read_access_token(token).get("sub", ""))
     except (TokenError, ValueError):
-        raise APIError(401, errors.UNAUTHENTICATED, "invalid token") from None
+        raise unauthenticated("invalid token") from None
     user = db.get(User, user_id)
     if user is None or not user.is_active:
-        raise APIError(401, errors.UNAUTHENTICATED, "unknown or inactive user")
+        raise unauthenticated("unknown or inactive user")
     return user
 
 

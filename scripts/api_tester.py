@@ -82,6 +82,16 @@ show("login w/ spaces stripped fails", c.post("/auth/login", data={"username": "
 import jwt, tokens  # noqa: E402
 no_exp = jwt.encode({"sub": str(uid)}, tokens.SECRET, algorithm=tokens.ALGORITHM)
 show("token without exp rejected", c.get("/auth/me", headers={"Authorization": "Bearer " + no_exp}), 401)
+import manage  # noqa: E402
+if "WWW-Authenticate" not in c.get("/auth/me").headers:
+    failures.append("401 carries no WWW-Authenticate header")
+if manage.main(["grant-role", "tester2", "admin"]) != 0 or manage.main(["grant-role", "tester2", "admin"]) != 0:
+    failures.append("manage grant-role should succeed, and succeed again (idempotent)")
+if manage.main(["grant-role", "no-such-user", "admin"]) != 1:
+    failures.append("manage grant-role for an unknown user should exit 1")
+show("manage-granted admin works", c.get("/users", headers=login("tester2", "secret123")), 200)
+manage.main(["revoke-role", "tester2", "admin"])
+show("revoked admin loses access", c.get("/users", headers=login("tester2", "secret123")), 403)
 show("list users no auth", c.get("/users"), 401)
 show("list users as user", c.get("/users", headers=U), 403)
 if "password" in show("list users as admin", c.get("/users", headers=A), 200).text:
