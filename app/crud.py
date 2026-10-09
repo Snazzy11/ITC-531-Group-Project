@@ -1,5 +1,5 @@
 """Database access. Every function takes a Session and returns rows or None -
-no HTTP knowledge, no exceptions raised on purpose. api.py decides what a
+no HTTP knowledge, no exceptions raised on purpose. The routers decide what a
 None or an IntegrityError means to a client.
 
 The one piece of policy that lives here is CLIENT_TRANSITIONS, because it

@@ -13,7 +13,7 @@ outside our machines and no account was created anywhere.
 | `PROVIDER_SHORTLIST.md` | 4: C1–C6 for AWS, Cloudflare and Azure, our choice, and Route B |
 | `COST_AND_RISK.md` | 7: lifecycle rules, versioning cost, egress |
 | `architecture-diagram.png` | 6: the app, store and database, with the presigned path drawn separately |
-| `app/files.py` | 1: upload (single and batch), list, get, download, delete |
+| `app/routers/files.py` | 1: upload (single and batch), list, get, download, delete |
 | `app/ports/storage.py` | 1: the only module that talks to the store |
 | `app/...` (the rest) | Everything else that changed: the `files` table, error codes, the worker's stamp |
 | `scripts/storage_report.py` | 5: the storage report, plus a pass over our index |
