@@ -15,9 +15,8 @@ from database import models  # noqa: F401
 from database.database import Base, engine
 
 if engine.dialect.name == "sqlite":
-    # SQLite ignores foreign keys unless asked, so without this the ON DELETE
-    # RESTRICT checks (e.g. "hard delete matched item" -> 409) wrongly pass
-    # as 204 and everything after them cascades into false failures.
+    # SQLite ignores foreign keys by default, which would turn the RESTRICT
+    # checks (hard delete of a matched item -> 409) into false failures.
     from sqlalchemy import event
 
     @event.listens_for(engine, "connect")

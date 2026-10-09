@@ -17,9 +17,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 
 def unauthenticated(detail: str) -> APIError:
-    """401: the server does not know who you are. RFC 9110 requires a 401 to
-    say how to authenticate, hence the header. (403, below, is the other case:
-    it knows who you are and the answer is no.)"""
+    """401 means we don't know who you are. A 401 has to say how to log in, hence the header."""
     return APIError(401, errors.UNAUTHENTICATED, detail, headers={"WWW-Authenticate": "Bearer"})
 
 
@@ -50,11 +48,10 @@ def require_role(*allowed: str):
 
 
 login_required = Depends(current_user)
-"""Use as `dependencies=[login_required]` when the route only needs to know
-someone is signed in, not who."""
+"""For routes that only need someone signed in: `dependencies=[login_required]`."""
 
 admin = Depends(require_role("admin"))
-"""Use as `dependencies=[admin]` on a route that only admins may call."""
+"""For admin-only routes: `dependencies=[admin]`."""
 
 
 def is_admin(user: User) -> bool:
@@ -62,7 +59,6 @@ def is_admin(user: User) -> bool:
 
 
 def require_owner_or_admin(user: User, owner_id: int) -> None:
-    """Call inside a route once the row is loaded: 403 unless `user` owns it
-    or is an admin."""
+    """403 unless `user` owns the row or is an admin. Call it after loading the row."""
     if user.id != owner_id and not is_admin(user):
         raise APIError(403, errors.FORBIDDEN, "you do not own this resource")

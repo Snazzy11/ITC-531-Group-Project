@@ -10,8 +10,8 @@ MIN_SECRET_BYTES = 32  # HS256 wants a key at least as long as its 256-bit hash
 
 
 def _load_secret() -> str:
-    # No default: a default secret is a shared secret, and anyone who read the
-    # source could forge a token. Missing, empty or short stops the app at startup.
+    # No default: a default secret is one everybody knows. A missing, empty or
+    # short one stops the app from starting.
     secret = os.environ.get("JWT_SECRET")
     if not secret:
         raise RuntimeError("JWT_SECRET is not set. Generate one with: openssl rand -hex 32")
@@ -34,10 +34,9 @@ def create_access_token(subject: str) -> str:
 
 
 def read_access_token(token: str) -> dict:
-    # algorithms= is a whitelist the server supplies. Passing the token's own
-    # alg header here instead is the algorithm-confusion vulnerability.
-    # "require" makes a validly signed token with no exp or sub invalid;
-    # by default PyJWT only checks exp when it happens to be present.
+    # algorithms= is our own whitelist; trusting the token's alg header instead
+    # is the algorithm-confusion bug. require= rejects a token with no exp or
+    # sub (PyJWT only checks exp if it's there).
     try:
         return jwt.decode(
             token, SECRET, algorithms=[ALGORITHM], options={"require": ["exp", "sub"]}

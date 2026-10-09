@@ -358,8 +358,7 @@ ROLE_NAMES = ("user", "admin")
 
 
 def grant_role(db: Session, user: User, role_name: str) -> bool:
-    """Adds the role if the user lacks it. Returns True if anything changed, so
-    running it twice is harmless."""
+    """Returns True if the role was added, False if they already had it."""
     role = get_or_create_role(db, role_name)
     if role in user.roles:
         return False
@@ -368,7 +367,7 @@ def grant_role(db: Session, user: User, role_name: str) -> bool:
 
 
 def revoke_role(db: Session, user: User, role_name: str) -> bool:
-    """Removes the role if the user has it. Returns True if anything changed."""
+    """Returns True if the role was removed, False if they didn't have it."""
     for role in user.roles:
         if role.name == role_name:
             user.roles.remove(role)
@@ -377,9 +376,8 @@ def revoke_role(db: Session, user: User, role_name: str) -> bool:
 
 
 def seed_auth(db: Session, admin_name: str | None, admin_password: str | None) -> None:
-    """Idempotent startup step: make sure the roles exist and, when both
-    settings are given, that the bootstrap admin account exists. Roles are
-    otherwise handed out only by `python -m manage`, never by an endpoint."""
+    """Safe to run on every startup: makes sure the roles exist and, if both
+    settings are given, that the bootstrap admin does too."""
     for name in ROLE_NAMES:
         get_or_create_role(db, name)
     if admin_name and admin_password:

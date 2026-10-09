@@ -106,16 +106,15 @@ returned by any endpoint. In this app the `cost` setting is 10 (chosen in 2026),
 app should never reach production, and it can be changed easily. 12 is the minimum recommendation for
 real security.
 
-Passwords are 6-72 characters and at most 72 **bytes** (bcrypt's limit). Longer ones are rejected with a 422, never
-truncated, because truncating would make two different passwords that share their first 72 bytes verify as each other.
-The schema counts characters (an early, field-level error) and `hash_password` re-checks in bytes (the unit bcrypt limits in);
-the reasoning is in `app/password_util.py`. Passwords are stored exactly as typed, with no whitespace stripping.
+Passwords are 6-72 characters and at most 72 **bytes** (bcrypt's limit). Longer ones get a 422 instead of being
+truncated, because truncating would make two passwords with the same first 72 bytes match each other. The schema
+counts characters and `hash_password` re-checks in bytes (reasoning in `app/password_util.py`). Passwords are
+stored exactly as typed, with no whitespace stripping.
 
-No auth secret has a default. `JWT_SECRET` must be set, at least 32 bytes; if it is missing, empty or short the app
-refuses to start with `JWT_SECRET is not set...`. The only credentials committed to the repo are the local-only dev
-ones for the Postgres and RustFS containers in `compose.yml` and `store.env.example`
-(`seekr-devonly`). Those services publish ports to your machine (5432 and 9000), so only run the
-stack on a trusted network, and replace these credentials for any real deployment.
+No auth secret has a default. `JWT_SECRET` must be at least 32 bytes, and the app won't start without it. The
+only credentials committed to the repo are the local dev ones for the Postgres and RustFS containers
+(`seekr-devonly`). Those services publish ports to your machine (5432, 9000), so only run the stack on a trusted
+network and change them for anything real.
 
 In `/docs`, the **Authorize** button takes the token from the login endpoint.
 If it cannot log in from there, get a token with the curl above and paste it in.
@@ -145,30 +144,27 @@ and do nothing.
 
 ## Authorization
 
-Authentication says *who* you are; this is what you are *allowed* to do.
+Authentication is who you are; this is what you're allowed to do.
 
-**Roles.** Two, stored in a many-to-many `users` <-> `roles` schema (`user_roles`), so a user can hold several
-and a new role is a new row, not a new column. `user` is everyone who registers: browse, post and manage
-their own items and files, match. `admin` also manages locations, hard-deletes items, lists every user, and
-may act on anyone's items and files. There is no `is_admin` flag.
+**Roles.** There are two, kept in a many-to-many `users` <-> `roles` table (`user_roles`), so a user can hold
+several and a new role is just a new row. `user` is everyone who registers: they can browse, post, match, and manage
+their own items and files. `admin` can also manage locations, hard-delete items, list every user, and act on
+anyone's items and files. There is no `is_admin` flag.
 
-**Two kinds of check** (both in `app/auth.py`, see "Adding authentication" below):
-- a *role* check, `require_role("admin")` / `dependencies=[admin]`, chained on the authentication dependency;
-- an *ownership* check, `require_owner_or_admin(user, row.user_id)`, which needs no special role: the person
-  who posted an item can edit and withdraw it, and the person who uploaded a file can read and delete it.
+**Two kinds of check**, both in `app/auth.py` (see "Adding authentication" below): a role check
+(`dependencies=[admin]`) and an ownership check (`require_owner_or_admin`), which needs no special role. The
+person who posted an item can edit or withdraw it, and whoever uploaded a file can read or delete it.
 
-**401 vs 403, in our words.** A **401** means the server does not know who you are: no token, a token that is
-bad or expired, an account that no longer exists or is inactive, or a failed login. The fix is to log in
-(and every 401 carries `WWW-Authenticate: Bearer` saying so). A **403** means the server knows exactly who you
-are and the answer is still no: you are signed in but not an admin, or it is somebody else's item. Logging in
-again would change nothing, so the client should not retry, it should tell the user they can't do that. Keeping
-the two apart matters to a client: 401 means "show the login screen", 403 means "show a refusal". Every
-authentication failure is a 401 and every authorization failure is a 403, with no exceptions. One thing 403
-does reveal: asking for another user's file returns 403, not 404, so someone can tell that a file id exists.
-File ids are sequential numbers and the file itself is never exposed, so we accepted that.
+**401 vs 403.** A **401** means the server doesn't know who you are: no token, a bad or expired one, an account
+that's gone or inactive, or a failed login. The fix is to log in, and every 401 carries `WWW-Authenticate: Bearer`.
+A **403** means the server knows exactly who you are and the answer is still no: you're not an admin, or it's
+someone else's item. Logging in again won't help. So a client shows a login screen for 401 and a refusal for 403.
+Authentication failures are always 401 and authorization failures always 403. One side effect: another
+user's file returns 403, not 404, so a file id can be shown to exist. The ids are sequential and the file itself
+stays private, so we accepted that.
 
-**How roles are assigned: by script, never by an endpoint.** We did **not** use "the first account to register
-becomes the admin", because that hands the admin role to whoever reaches a fresh deployment first. Instead:
+**Roles are assigned by script, never by an endpoint.** We did not make the first account to register the
+admin, since on a fresh deployment that's whoever gets there first.
 
 ```sh
 docker compose --env-file .env.local exec app python -m manage grant-role alice-smith admin
@@ -176,16 +172,13 @@ docker compose --env-file .env.local exec app python -m manage revoke-role alice
 docker compose --env-file .env.local exec app python -m manage seed-roles
 ```
 
-(`app/manage.py`.) Every command is idempotent: granting a role someone already has changes nothing and
-still exits 0; an unknown user exits 1. To get the first admin on a fresh stack without running anything, put
-`ADMIN_DISPLAY_NAME` and `ADMIN_PASSWORD` in `.env.local`; at startup the app runs the same code to create
-that account (or add the role to it if it already exists) and make sure both roles exist. Nothing in the API
-can grant a role, and `POST /users` rejects a `roles` field. Note that if you set `ADMIN_DISPLAY_NAME` to a name
-somebody has already registered, that person is made an admin at the next start.
+Running a command twice is fine (nothing changes, exit 0), and an unknown user exits 1. To get a first admin on a
+fresh stack, set `ADMIN_DISPLAY_NAME` and `ADMIN_PASSWORD` in `.env.local`. At startup the app uses the same code
+to create that account, or add the role if the name already exists. (So if you set it to a name someone has
+already registered, they become an admin.) `POST /users` rejects a `roles` field.
 
-`scripts/authz_transcript.sh` prints a transcript of all of this: the four outcomes on an item (no token 401,
-signed in but not the owner 403, owner 200, admin 200), the admin-only `GET /users` (403, then 200), and the
-role script run twice.
+`scripts/authz_transcript.sh` prints a transcript of all this: the four outcomes on an item (no token 401, not the
+owner 403, owner 200, admin 200), the admin-only `GET /users` (403 then 200), and the script run twice.
 
 **Endpoints left open on purpose, and why each is safe.**
 
