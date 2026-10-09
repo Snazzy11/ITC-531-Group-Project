@@ -1,26 +1,21 @@
 """Lost & Found API: app setup only. The endpoints live in routers/, one module
-per concern (items, matches, locations, images, users, files, meta).
+per concern (items, matches, locations, images, users, files, meta, auth).
 
     uvicorn api:app --reload      # docs at http://127.0.0.1:8000/docs
 """
 
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-from starlette import status
+from fastapi import FastAPI, Request
 
-import schemas
-from database.database import Base, engine, get_db
-from database.models import User
+import crud
+from database.database import Base, SessionLocal, engine
 from errors import register_error_handlers
 from ports import storage
-from routers import files, images, items, locations, matches, meta, users
-from routers.users import current_user
+from routers import auth, files, images, items, locations, matches, meta, users
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,6 +23,8 @@ logging.basicConfig(level=logging.INFO)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     storage.ensure_bucket()
+    with SessionLocal() as db:
+        crud.seed_auth(db, os.getenv("ADMIN_DISPLAY_NAME"), os.getenv("ADMIN_PASSWORD"))
     yield
 
 
@@ -37,7 +34,7 @@ app = FastAPI(title="Lost & Found API", version="0.2.0", lifespan=lifespan)
 # in FastAPI's default {"detail": "..."} shape.
 register_error_handlers(app)
 
-for module in (items, matches, locations, images, users, files, meta):
+for module in (items, matches, locations, images, users, files, meta, auth):
     app.include_router(module.router)
 
 
@@ -56,25 +53,6 @@ async def attach_request_id(request: Request, call_next):
     response.headers["X-Request-ID"] = request.state.request_id
     return response
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
-
-def require_role(*allowed: str):
-    def dependency(user: User = Depends(current_user)) -> User:
-        if not {r.name for r in user.roles}.intersection(allowed):
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, f"requires one of: {', '.join(sorted(allowed))}"
-            )
-        return user
-    return dependency
-
-@app.get("/auth/me", response_model=schemas.UserOut)
-def me(user: User = Depends(current_user)):
-    return user
-
-@app.get("/admin/users", response_model=list[schemas.UserOut])
-def list_users(_: User = Depends(require_role("admin")), db: Session = Depends(get_db)):
-    return list(db.scalars(select(User)))
-
-# We have migration tool, so when a column changes, drop the database and let
-# this rebuild it. create_all never ALTERs an existing table.
+# No migration tool by design. When a column changes, drop the database and let
+# this rebuild it; create_all never ALTERs an existing table.
 Base.metadata.create_all(bind=engine)

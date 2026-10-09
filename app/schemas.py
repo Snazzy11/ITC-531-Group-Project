@@ -169,6 +169,11 @@ class UserCreate(UserBase): # Currently we will allow anyone to create an accoun
     model_config = REQUEST
     password: str = Field(min_length=6, max_length=100)
     
+class RoleOut(BaseModel):
+    model_config = RESPONSE
+    id: int
+    name: str
+
 class UserResponse(UserBase):
     model_config = RESPONSE
     
@@ -180,14 +185,8 @@ class UserResponse(UserBase):
     roles: list[RoleOut] = []
 
 
-class RoleOut(BaseModel):
-    model_config = RESPONSE
-    id: int
-    name: str
-
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
 
-# '{"display_name": "string","real_name": "string","password": "string","is_admin": true}'
