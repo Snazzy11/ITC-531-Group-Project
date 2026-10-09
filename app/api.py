@@ -8,12 +8,19 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from starlette import status
 
-from database.database import Base, engine
+import schemas
+from database.database import Base, engine, get_db
+from database.models import User
 from errors import register_error_handlers
 from ports import storage
 from routers import files, images, items, locations, matches, meta, users
+from routers.users import current_user
 
 logging.basicConfig(level=logging.INFO)
 
@@ -49,7 +56,25 @@ async def attach_request_id(request: Request, call_next):
     response.headers["X-Request-ID"] = request.state.request_id
     return response
 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
-# No migration tool by design. When a column changes, drop the database and let
-# this rebuild it; create_all never ALTERs an existing table.
+def require_role(*allowed: str):
+    def dependency(user: User = Depends(current_user)) -> User:
+        if not {r.name for r in user.roles}.intersection(allowed):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, f"requires one of: {', '.join(sorted(allowed))}"
+            )
+        return user
+    return dependency
+
+@app.get("/auth/me", response_model=schemas.UserOut)
+def me(user: User = Depends(current_user)):
+    return user
+
+@app.get("/admin/users", response_model=list[schemas.UserOut])
+def list_users(_: User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    return list(db.scalars(select(User)))
+
+# We have migration tool, so when a column changes, drop the database and let
+# this rebuild it. create_all never ALTERs an existing table.
 Base.metadata.create_all(bind=engine)

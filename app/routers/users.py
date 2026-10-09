@@ -1,12 +1,17 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette import status
 
 import crud
 import errors
 import schemas
+from api import oauth2_scheme
 from database.database import get_db
+from database.models import User
 from errors import APIError
+from tokens import TokenError, read_access_token
 
 router = APIRouter(tags=["users"])
 
@@ -33,3 +38,17 @@ def list_users(
     offset: int = Query(default=0, ge=0)
 ):
     return crud.list_users(db, limit=limit, offset=offset)
+
+def current_user(
+    token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)
+) -> User:
+    if not token:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not authenticated")
+    try:
+        payload = read_access_token(token)
+    except TokenError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token") from None
+    user = db.scalar(select(User).where(User.display_name == payload.get("sub"))) # TODO ensure this works as display name was swapped for email
+    if user is None or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "unknown or inactive user")
+    return user

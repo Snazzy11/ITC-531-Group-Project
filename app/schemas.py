@@ -168,11 +168,26 @@ class UserBase(BaseModel):
 class UserCreate(UserBase): # Currently we will allow anyone to create an account with any access level
     model_config = REQUEST
     password: str = Field(min_length=6, max_length=100)
-    is_admin: bool = Field()
     
 class UserResponse(UserBase):
     model_config = RESPONSE
     
     id: int
+    display_name: str
+    real_name: str
+    is_active: bool
+    created_at: datetime
+    roles: list[RoleOut] = []
+
+
+class RoleOut(BaseModel):
+    model_config = RESPONSE
+    id: int
+    name: str
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
 
 # '{"display_name": "string","real_name": "string","password": "string","is_admin": true}'
