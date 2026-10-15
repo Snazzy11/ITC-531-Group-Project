@@ -63,8 +63,8 @@ is not.
 
 | Status | Code | Raised when |
 |---|---|---|
-| 401 | `UNAUTHENTICATED` | Admin route, no `X-Admin-Token` header |
-| 403 | `FORBIDDEN` | Admin route, wrong `X-Admin-Token` |
+| 401 | `UNAUTHENTICATED` | No bearer token, a bad, expired or tampered token, a token for a user that no longer exists or is inactive, or `POST /auth/login` with a wrong display name or password |
+| 403 | `FORBIDDEN` | Signed in, but not allowed: an admin-only route called by a non-admin, or someone else's item or file |
 | 404 | `NOT_FOUND` | Unknown route |
 | 400 | `UNSUPPORTED_FILE_TYPE` | A `/files` upload whose bytes are not JPEG, PNG, WebP, HEIC or PDF, whatever the client claimed |
 | 404 | `ITEM_NOT_FOUND` / `MATCH_NOT_FOUND` / `LOCATION_NOT_FOUND` / `IMAGE_NOT_FOUND` / `USER_NOT_FOUND` / `FILE_NOT_FOUND` | Referenced row missing |
@@ -111,6 +111,6 @@ with the except clause they still get `409 MATCH_ALREADY_EXISTS` instead of a
 
 No exception text, SQL, table name, hostname, file path, or submitted input.
 5xx bodies use a fixed string and the real error goes to the log with the
-request id. The same discipline applies to the auth routes when they land:
-"those credentials are not valid," never anything that reveals whether an email
-is registered.
+request id. The same discipline applies to the auth routes: a failed login
+always says "incorrect display name or password", never which of the two was
+wrong, so it cannot be used to find out whether a display name is registered.

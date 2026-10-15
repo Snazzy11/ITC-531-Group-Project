@@ -8,7 +8,7 @@ import errors
 import schemas
 from database.database import get_db
 from errors import APIError
-from dependencies import admin
+from auth import admin
 
 router = APIRouter(tags=["locations"])
 

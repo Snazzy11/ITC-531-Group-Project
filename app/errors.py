@@ -92,8 +92,10 @@ STORAGE_UNAVAILABLE = "STORAGE_UNAVAILABLE"
 class APIError(HTTPException):
     """An HTTPException plus a machine-readable code."""
 
-    def __init__(self, status_code: int, code: str, detail: str):
-        super().__init__(status_code=status_code, detail=detail)
+    def __init__(
+        self, status_code: int, code: str, detail: str, headers: dict[str, str] | None = None
+    ):
+        super().__init__(status_code=status_code, detail=detail, headers=headers)
         self.code = code
 
 
@@ -122,9 +124,13 @@ def errors(*status_codes: int) -> dict:
     return {code: {"model": ErrorResponse} for code in status_codes}
 
 
-def make_response(request: Request, status_code: int, body: ErrorBody) -> JSONResponse:
+def make_response(
+    request: Request, status_code: int, body: ErrorBody, headers: dict[str, str] | None = None
+) -> JSONResponse:
     body.request_id = getattr(request.state, "request_id", None)
-    return JSONResponse(status_code=status_code, content={"error": body.model_dump()})
+    return JSONResponse(
+        status_code=status_code, content={"error": body.model_dump()}, headers=headers
+    )
 
 
 # --- handlers ---------------------------------------------------------------
@@ -156,7 +162,9 @@ async def handle_http_exception(request: Request, exc: StarletteHTTPException):
     else:
         code = STATUS_TO_CODE.get(exc.status_code, INTERNAL_ERROR)
         detail = DEFAULT_DETAIL.get(exc.status_code, "request failed")
-    return make_response(request, exc.status_code, ErrorBody(code=code, detail=detail))
+    return make_response(
+        request, exc.status_code, ErrorBody(code=code, detail=detail), headers=exc.headers
+    )
 
 
 async def handle_validation_error(request: Request, exc: RequestValidationError):

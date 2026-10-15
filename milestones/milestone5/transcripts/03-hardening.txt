@@ -1,0 +1,18 @@
+After searching through all of our python files (everything under our app directory), I found no instances of string-formatted SQL.
+
+Demo-only conventions:
+Line 7 of password_util.py -> Cost factor of 10 chosen for the sake of speed and only because we will not have real users and do not    
+                                require the security more would provide at the expense of extra compute time. 
+
+curl -i -X POST http://127.0.0.1:8000/api/v1/users   -H "Content-Type: application/json"   -d '{"real_name":"Valid Name", "display_name": "short", "password":"long-enough-password"}'
+
+HTTP/1.1 422 Unprocessable Content
+Server: nginx/1.27.4
+Date: Sun, 11 Oct 2026 18:53:53 GMT
+Content-Type: application/json
+Content-Length: 250
+Connection: keep-alive
+x-request-id: 1cd6b2e2b572407126a81058bf79f840
+X-Request-ID: 1cd6b2e2b572407126a81058bf79f840
+
+{"error":{"code":"VALIDATION_ERROR","detail":"the request contains invalid data","fields":[{"field":"body.display_name","message":"String should have at least 6 characters","type":"string_too_short"}],"request_id":"1cd6b2e2b572407126a81058bf79f840"}}

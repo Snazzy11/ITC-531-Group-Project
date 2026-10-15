@@ -5,14 +5,13 @@ None or an IntegrityError means to a client.
 The one piece of policy that lives here is CLIENT_TRANSITIONS, because it
 describes the item lifecycle rather than any single endpoint.
 """
-import os
-
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from database import models
 import schemas
 from database.models import File, Item, Match, Location, User
-from hashlib import scrypt
+from password_util import hash_password
 
 # Transitions a client may ask for directly via PATCH /items/{id}/status.
 # Anything -> MATCHED and MATCHED -> OPEN are system-only: they happen when a
@@ -36,9 +35,9 @@ EDITABLE_STATUSES = {
 
 # items
 
-def create_item(db: Session, item: schemas.ItemCreate) -> models.Item:
+def create_item(db: Session, item: schemas.ItemCreate, user_id: int) -> models.Item:
     # status is not passed: the column defaults to 'open'.
-    row = models.Item(**item.model_dump())
+    row = models.Item(**item.model_dump(), user_id=user_id)
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -332,21 +331,66 @@ def delete_file(db: Session, row: models.File) -> None:
 
 # users
 
-def create_user(db: Session, user: schemas.UserCreate) -> User:
-    # Currently we will allow anyone to create an account with any access level
-    salt = os.urandom(16)
-    digest = scrypt(user.password.encode(), salt=salt, n=2**10, r=8, p=1) # in prod n >= 2**16
+def get_or_create_role(db: Session, name: str) -> models.Role:
+    role = db.scalar(select(models.Role).where(models.Role.name == name))
+    if role is None:
+        role = models.Role(name=name)
+        db.add(role)
+        db.flush()
+    return role
+
+
+def create_user(db: Session, user: schemas.UserCreate, role: str = "user") -> User:
+    """Raises password_util.PasswordTooLongError for a password over 72 bytes."""
     row = models.User(
         display_name=user.display_name,
         real_name=user.real_name,
-        is_admin=user.is_admin,
-        # The salt is kept so a password can be checked once login exists.
-        password_hash=f"{salt.hex()}${digest.hex()}",
+        password_hash=hash_password(user.password),
+        roles=[get_or_create_role(db, role)],
     )
     db.add(row)
     db.commit()
     db.refresh(row)
     return row
+
+
+ROLE_NAMES = ("user", "admin")
+
+
+def grant_role(db: Session, user: User, role_name: str) -> bool:
+    """Returns True if the role was added, False if they already had it."""
+    role = get_or_create_role(db, role_name)
+    if role in user.roles:
+        return False
+    user.roles.append(role)
+    return True
+
+
+def revoke_role(db: Session, user: User, role_name: str) -> bool:
+    """Returns True if the role was removed, False if they didn't have it."""
+    for role in user.roles:
+        if role.name == role_name:
+            user.roles.remove(role)
+            return True
+    return False
+
+
+def seed_auth(db: Session, admin_name: str | None, admin_password: str | None) -> None:
+    """Safe to run on every startup: makes sure the roles exist and, if both
+    settings are given, that the bootstrap admin does too."""
+    for name in ROLE_NAMES:
+        get_or_create_role(db, name)
+    if admin_name and admin_password:
+        existing = db.scalar(select(User).where(User.display_name == admin_name))
+        if existing is None:
+            existing = User(
+                display_name=admin_name,
+                real_name="Administrator",
+                password_hash=hash_password(admin_password),
+            )
+            db.add(existing)
+        grant_role(db, existing, "admin")
+    db.commit()
 
 
 def get_user(db: Session, user_id: int) -> User | None:

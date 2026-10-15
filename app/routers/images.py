@@ -10,7 +10,9 @@ import presenters
 import crud
 import errors
 import schemas
+from auth import current_user, require_owner_or_admin
 from database.database import get_db
+from database.models import User
 from errors import APIError
 from database import models
 from ports import storage
@@ -22,14 +24,17 @@ router = APIRouter(tags=["images"])
     "/items/{item_id}/images",
     response_model=schemas.ImageUploadResponse,
     status_code=201,
-    responses=errors.errors(404, 409),
+    responses=errors.errors(401, 403, 404, 409),
 )
-def start_image_upload(item_id: int, db: Session = Depends(get_db)):
+def start_image_upload(
+    item_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     """Returns a presigned upload_url. A finished upload replaces the item's
     current photo."""
     item = crud.get_item(db, item_id)
     if item is None:
         raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
+    require_owner_or_admin(user, item.user_id)
     if item.status not in crud.EDITABLE_STATUSES:
         raise APIError(409, errors.ITEM_CLOSED, f"a {item.status.value} post cannot be edited")
     image = crud.create_image(db, item)
@@ -45,11 +50,20 @@ def start_image_upload(item_id: int, db: Session = Depends(get_db)):
     "/items/{item_id}/images/{upload_id}/complete",
     response_model=schemas.ImageResponse,
     status_code=202,
-    responses=errors.errors(404, 409),
+    responses=errors.errors(401, 403, 404, 409),
 )
-def complete_image_upload(item_id: int, upload_id: str, db: Session = Depends(get_db)):
+def complete_image_upload(
+    item_id: int,
+    upload_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     """Call once the PUT to upload_url has succeeded. Idempotent: an upload
     that is already queued or finished is returned as it is."""
+    item = crud.get_item(db, item_id)
+    if item is None:
+        raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
+    require_owner_or_admin(user, item.user_id)
     image = crud.get_image(db, item_id, upload_id)
     if image is None:
         raise APIError(404, errors.IMAGE_NOT_FOUND, "image not found")
