@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block browse %}
+  <h1 class="browse-heading">Reports</h1>
+  {% include 'filters.html' %}
+
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Reports table; scroll horizontally on smaller screens">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Item</th>
+          <th scope="col">Type</th>
+          <th scope="col">Location</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          <tr>
+            <td>
+              <a class="title-button" href="{{ url(item=item.id) }}">{{ item.name }}</a>
+            </td>
+            <td>{{ 'Lost' if item.type == 0 else 'Found' }}</td>
+            <td>{{ item.location_name }}</td>
+            <td>{{ item.status|capitalize }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="4">
+              <div class="empty-state">
+                <h3>No reports found.</h3>
+                <p>Try changing your filters or post a new report.</p>
+                <a class="button primary" href="{{ url(form='item') }}">Report an item</a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if offset or items|length == 12 %}
+    <nav class="pagination" aria-label="Item pagination">
+      {% if offset %}
+        <a class="button" href="{{ previous_url }}">← Previous</a>
+      {% else %}
+        <span></span>
+      {% endif %}
+      <span>Page {{ (offset // 12) + 1 }}</span>
+      {% if items|length == 12 %}
+        <a class="button" href="{{ next_url }}">Next →</a>
+      {% else %}
+        <span></span>
+      {% endif %}
+    </nav>
+  {% endif %}
+{% endblock %}

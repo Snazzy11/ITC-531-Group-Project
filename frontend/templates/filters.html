@@ -1,0 +1,16 @@
+<form class="filters" method="get" aria-label="Filter items">
+  <label class="search-field" for="filter-search">Search
+    <input id="filter-search" name="q" type="search" placeholder="Item name or description" value="{{ filters.q }}" maxlength="100">
+  </label>
+  <label for="filter-type">Report type
+    <select id="filter-type" name="type">
+      <option value="">Lost and found</option>
+      <option value="0" {% if filters.type=='0' %}selected{% endif %}>Lost</option>
+      <option value="1" {% if filters.type=='1' %}selected{% endif %}>Found</option>
+    </select>
+  </label>
+  <div class="filter-actions">
+    <button class="button" type="submit">Search</button>
+    {% if filters.q or filters.type or filters.location_id or filters.status %}<a href="/">Clear</a>{% endif %}
+  </div>
+</form>
