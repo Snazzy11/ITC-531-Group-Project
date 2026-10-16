@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push: {branches: [main]}
+  pull_request: {branches: [main]}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -r requirements.txt
+      - run: ruff check mypipeline
+      - name: Test
+        working-directory: mypipeline
+        run: pytest -q --cov=service --cov-report=term-missing --cov-fail-under=80
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write          # federated identity; no stored provider key
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: mypipeline/Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+          tags: mypipeline:${{ github.sha }}
