@@ -1,10 +1,9 @@
 import os
 from typing import Annotated
 
-from fastapi import Depends, Header
-
 import errors
 from errors import APIError
+from fastapi import Depends, Header
 
 # admin placeholder
 # Stands in for real auth until implemented.

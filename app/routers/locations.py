@@ -1,14 +1,13 @@
+import crud
+import errors
+import presenters
+import schemas
+from database.database import get_db
+from dependencies import admin
+from errors import APIError
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-
-import presenters
-import crud
-import errors
-import schemas
-from database.database import get_db
-from errors import APIError
-from dependencies import admin
 
 router = APIRouter(tags=["locations"])
 

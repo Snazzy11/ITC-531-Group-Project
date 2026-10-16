@@ -7,13 +7,13 @@ describes the item lifecycle rather than any single endpoint.
 """
 
 import os
-
-from sqlalchemy.orm import Session
-from datetime import datetime, timezone
-from database import models
-import schemas
-from database.models import File, Item, Match, Location, User
+from datetime import UTC, datetime
 from hashlib import scrypt
+
+import schemas
+from database import models
+from database.models import File, Item, Location, Match, User
+from sqlalchemy.orm import Session
 
 # Transitions a client may ask for directly via PATCH /items/{id}/status.
 # Anything -> MATCHED and MATCHED -> OPEN are system-only: they happen when a
@@ -253,7 +253,7 @@ def set_image_status(
 def mark_image_rejected(db: Session, image: models.Image, reason: str) -> None:
     image.status = models.ImageStatus.REJECTED
     image.reject_reason = reason
-    image.processed_at = datetime.now(timezone.utc)
+    image.processed_at = datetime.now(UTC)
     db.commit()
 
 
@@ -280,7 +280,7 @@ def mark_image_ready(
     image.photo_key = photo_key
     image.content_type = content_type
     image.size_bytes = size_bytes
-    image.processed_at = datetime.now(timezone.utc)
+    image.processed_at = datetime.now(UTC)
     db.commit()
     return replaced_keys
 

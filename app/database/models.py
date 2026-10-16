@@ -1,6 +1,5 @@
 import enum
 import uuid
-from typing import List
 
 from sqlalchemy import (
     Boolean,
@@ -64,7 +63,7 @@ class Location(Base):
     description = Column(String(500))
     is_active = Column(Boolean, nullable=False, server_default=true())
 
-    items: Mapped[List["Item"]] = relationship(back_populates="location")
+    items: Mapped[list[Item]] = relationship(back_populates="location")
 
 
 class Item(Base):
@@ -107,7 +106,7 @@ class Item(Base):
     location = relationship("Location", back_populates="items")
 
     # user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    user_id_relation: Mapped["User"] = relationship(back_populates="items")
+    user_id_relation: Mapped[User] = relationship(back_populates="items")
 
     # Only a processed image is ever shown; the worker keeps at most one per item.
     photo = relationship(

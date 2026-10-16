@@ -1,13 +1,12 @@
-from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-
 import crud
 import errors
 import schemas
+from database import models
 from database.database import get_db
 from errors import APIError
-from database import models
+from fastapi import APIRouter, Depends, Query, Response
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["matches"])
 

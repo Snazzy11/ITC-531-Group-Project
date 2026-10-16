@@ -8,10 +8,9 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
-
 from database.database import Base, engine
 from errors import register_error_handlers
+from fastapi import FastAPI, Request
 from ports import storage
 from routers import files, images, items, locations, matches, meta, users
 
