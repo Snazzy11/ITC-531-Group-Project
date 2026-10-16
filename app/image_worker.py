@@ -19,14 +19,14 @@ def handle_message(channel, method, properties, body):
     try:
         job = json.loads(body)
         if not isinstance(job, dict):
-            raise ValueError("job must be a JSON object")
+            raise TypeError("job must be a JSON object")
         item_id = job.get("item_id")
         if type(item_id) is not int or item_id <= 0:
             raise ValueError("item_id must be a positive integer")
         image_ref = job.get("image_ref")
         if not isinstance(image_ref, str) or not image_ref.strip():
             raise ValueError("image_ref must be a non-empty string")
-    except (ValueError, UnicodeDecodeError) as error:
+    except (TypeError, ValueError, UnicodeDecodeError) as error:
         log.error("Rejecting invalid image job: %s", error)
         channel.basic_reject(delivery_tag=method.delivery_tag, requeue=False)
         return

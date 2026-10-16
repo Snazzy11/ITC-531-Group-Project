@@ -13,6 +13,10 @@ dependencies = [
     "psycopg2-binary==2.9.12",
     "pydantic>=2.13.5",
     "python-multipart>=0.0.32",
+    "ruff>=0.17.1",
     "sqlalchemy~=2.0.52",
     "uvicorn==0.51.0",
 ]
+
+[tool.ruff.lint]
+ignore = ["B008"]
