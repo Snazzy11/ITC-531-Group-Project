@@ -85,7 +85,9 @@ def publish_image_job(item_id: int, image_ref: str) -> None:
         channel.basic_publish(
             exchange="",
             routing_key=IMAGE_QUEUE,
-            body=json.dumps({"item_id": item_id, "image_ref": image_ref}).encode("utf-8"),
+            body=json.dumps({"item_id": item_id, "image_ref": image_ref}).encode(
+                "utf-8"
+            ),
             properties=pika.BasicProperties(
                 content_type="application/json",
                 delivery_mode=2,

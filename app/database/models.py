@@ -27,11 +27,11 @@ class ItemType(enum.IntEnum):
 
 
 class ItemStatus(str, enum.Enum):
-    OPEN = "open" # Fully unmatched item; also for items with proposed but unclaimed matches
-    MATCHED = "matched" # Matched to another item
-    RETURNED = "returned" # Matched and returned to use
-    WITHDRAWN = "withdrawn" # Removed from application by the user, for any reason
-    EXPIRED = "expired" # Stale for too long
+    OPEN = "open"  # Fully unmatched item; also for items with proposed but unclaimed matches
+    MATCHED = "matched"  # Matched to another item
+    RETURNED = "returned"  # Matched and returned to use
+    WITHDRAWN = "withdrawn"  # Removed from application by the user, for any reason
+    EXPIRED = "expired"  # Stale for too long
 
 
 class ImageStatus(str, enum.Enum):
@@ -46,8 +46,10 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     display_name = Column(String(50), nullable=False, unique=True)
     real_name = Column(String(50), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    password_hash = Column(String(255), nullable=False) # TODO change later
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    password_hash = Column(String(255), nullable=False)  # TODO change later
     is_admin = Column(Boolean, nullable=False)
 
     items = relationship("Item", back_populates="user_id_relation")
@@ -65,12 +67,9 @@ class Location(Base):
     items: Mapped[List["Item"]] = relationship(back_populates="location")
 
 
-
 class Item(Base):
     __tablename__ = "items"
-    __table_args__ = (
-        CheckConstraint("type IN (0, 1)", name="ck_items_type"),
-    )
+    __table_args__ = (CheckConstraint("type IN (0, 1)", name="ck_items_type"),)
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
@@ -102,7 +101,9 @@ class Item(Base):
         nullable=False,
         index=True,
     )
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     location = relationship("Location", back_populates="items")
 
     # user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
@@ -111,7 +112,9 @@ class Item(Base):
     # Only a processed image is ever shown; the worker keeps at most one per item.
     photo = relationship(
         "Image",
-        primaryjoin=lambda: and_(Image.item_id == Item.id, Image.status == ImageStatus.READY),
+        primaryjoin=lambda: and_(
+            Image.item_id == Item.id, Image.status == ImageStatus.READY
+        ),
         uselist=False,
         viewonly=True,
         lazy="selectin",
@@ -132,6 +135,7 @@ class Item(Base):
     @property
     def matches(self):
         return self.lost_matches + self.found_matches
+
 
 class Image(Base):
     """One upload attempt. Rows are created when an upload link is issued; the
@@ -172,7 +176,9 @@ class Image(Base):
     content_type = Column(String(100))
     size_bytes = Column(Integer)
     reject_reason = Column(String(200))
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     processed_at = Column(DateTime(timezone=True))
 
 
@@ -194,14 +200,18 @@ class File(Base):
     # What `file -k` found in the bytes, never what the client claimed.
     content_type = Column(String(100), nullable=False, index=True)
     size_bytes = Column(Integer, nullable=False)
-    uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    uploaded_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class Match(Base):
     __tablename__ = "matches"
     __table_args__ = (
         UniqueConstraint("lost_item_id", "found_item_id", name="uq_matches_item_pair"),
-        CheckConstraint("lost_item_id <> found_item_id", name="ck_matches_distinct_items"),
+        CheckConstraint(
+            "lost_item_id <> found_item_id", name="ck_matches_distinct_items"
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -217,7 +227,9 @@ class Match(Base):
         nullable=False,
         index=True,
     )
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     lost_item = relationship(
         "Item", foreign_keys=[lost_item_id], back_populates="lost_matches"

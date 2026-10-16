@@ -5,6 +5,7 @@ None or an IntegrityError means to a client.
 The one piece of policy that lives here is CLIENT_TRANSITIONS, because it
 describes the item lifecycle rather than any single endpoint.
 """
+
 import os
 
 from sqlalchemy.orm import Session
@@ -35,6 +36,7 @@ EDITABLE_STATUSES = {
 
 
 # items
+
 
 def create_item(db: Session, item: schemas.ItemCreate) -> models.Item:
     # status is not passed: the column defaults to 'open'.
@@ -114,6 +116,7 @@ def delete_item(db: Session, item: models.Item) -> None:
 
 # matches
 
+
 def create_match(db: Session, lost: models.Item, found: models.Item) -> models.Match:
     """Creates the pair and moves both items to 'matched' in one transaction,
     so a unique-constraint violation rolls the status changes back too."""
@@ -161,6 +164,7 @@ def delete_match(db: Session, match: models.Match) -> None:
 
 # locations
 
+
 def create_location(db: Session, location: schemas.LocationCreate) -> models.Location:
     row = models.Location(**location.model_dump())
     db.add(row)
@@ -204,9 +208,7 @@ def set_location_active(
 
 
 def count_items_at_location(db: Session, location_id: int) -> int:
-    return (
-        db.query(models.Item).filter(models.Item.location_id == location_id).count()
-    )
+    return db.query(models.Item).filter(models.Item.location_id == location_id).count()
 
 
 def delete_location(db: Session, location: models.Location) -> None:
@@ -215,6 +217,7 @@ def delete_location(db: Session, location: models.Location) -> None:
 
 
 # images
+
 
 def create_image(db: Session, item: models.Item) -> models.Image:
     # upload_id and status come from the column defaults.
@@ -284,6 +287,7 @@ def mark_image_ready(
 
 # files
 
+
 def add_files(db: Session, rows: list[models.File]) -> list[models.File]:
     """One transaction for the whole batch, so a multi-file upload is indexed
     all or not at all."""
@@ -332,10 +336,13 @@ def delete_file(db: Session, row: models.File) -> None:
 
 # users
 
+
 def create_user(db: Session, user: schemas.UserCreate) -> User:
     # Currently we will allow anyone to create an account with any access level
     salt = os.urandom(16)
-    digest = scrypt(user.password.encode(), salt=salt, n=2**10, r=8, p=1) # in prod n >= 2**16
+    digest = scrypt(
+        user.password.encode(), salt=salt, n=2**10, r=8, p=1
+    )  # in prod n >= 2**16
     row = models.User(
         display_name=user.display_name,
         real_name=user.real_name,

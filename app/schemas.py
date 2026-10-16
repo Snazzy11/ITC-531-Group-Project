@@ -28,8 +28,8 @@ REQUEST = ConfigDict(extra="forbid", str_strip_whitespace=True)
 RESPONSE = model_config = ConfigDict(from_attributes=True)
 
 
-
 # items
+
 
 class ItemBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -75,6 +75,7 @@ class ItemResponse(ItemBase):
 
 # matches
 
+
 class MatchCreate(BaseModel):
     model_config = REQUEST
 
@@ -92,6 +93,7 @@ class MatchResponse(BaseModel):
 
 
 # locations
+
 
 class LocationBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -129,6 +131,7 @@ class LocationAdminResponse(LocationResponse):
 
 # images
 
+
 class ImageResponse(BaseModel):
     model_config = RESPONSE
 
@@ -147,6 +150,7 @@ class ImageUploadResponse(ImageResponse):
 
 # files
 
+
 class FileResponse(BaseModel):
     model_config = RESPONSE
 
@@ -161,18 +165,24 @@ class FileResponse(BaseModel):
 
 # users
 
+
 class UserBase(BaseModel):
     display_name: str = Field(min_length=6, max_length=50)
     real_name: str = Field(min_length=2, max_length=50)
 
-class UserCreate(UserBase): # Currently we will allow anyone to create an account with any access level
+
+class UserCreate(
+    UserBase
+):  # Currently we will allow anyone to create an account with any access level
     model_config = REQUEST
     password: str = Field(min_length=6, max_length=100)
     is_admin: bool = Field()
-    
+
+
 class UserResponse(UserBase):
     model_config = RESPONSE
-    
+
     id: int
+
 
 # '{"display_name": "string","real_name": "string","password": "string","is_admin": true}'

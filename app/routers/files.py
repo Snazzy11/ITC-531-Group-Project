@@ -47,7 +47,9 @@ def check(upload: UploadFile) -> tuple[bytes, str]:
     data = upload.file.read(MAX_FILE_BYTES + 1)
     if len(data) > MAX_FILE_BYTES:
         raise APIError(
-            413, errors.FILE_TOO_LARGE, f"each file must be at most {MAX_FILE_BYTES // 2**20} MB"
+            413,
+            errors.FILE_TOO_LARGE,
+            f"each file must be at most {MAX_FILE_BYTES // 2**20} MB",
         )
     matches = image_processing.sniff(data)
     if not matches or any(match not in ALLOWED_TYPES for match in matches):
@@ -126,7 +128,9 @@ def upload_files(
 ):
     """All or nothing: one bad file and none of them are stored."""
     if len(files) > MAX_FILES:
-        raise APIError(413, errors.TOO_MANY_FILES, f"at most {MAX_FILES} files per request")
+        raise APIError(
+            413, errors.TOO_MANY_FILES, f"at most {MAX_FILES} files per request"
+        )
     return save(db, user_id, files)
 
 
@@ -142,11 +146,18 @@ def list_files(
     offset: int = Query(default=0, ge=0),
 ):
     return crud.list_files(
-        db, user_id=user_id, content_type=content_type, name=name, limit=limit, offset=offset
+        db,
+        user_id=user_id,
+        content_type=content_type,
+        name=name,
+        limit=limit,
+        offset=offset,
     )
 
 
-@router.get("/{file_id}", response_model=schemas.FileResponse, responses=errors.errors(404))
+@router.get(
+    "/{file_id}", response_model=schemas.FileResponse, responses=errors.errors(404)
+)
 def get_file(file_id: int, db: Session = Depends(get_db)):
     row = crud.get_file(db, file_id)
     if row is None:
@@ -157,7 +168,10 @@ def get_file(file_id: int, db: Session = Depends(get_db)):
 @router.get(
     "/{file_id}/content",
     response_class=Response,
-    responses={200: {"content": {t: {} for t in ALLOWED_TYPES}}, **errors.errors(404, 503)},
+    responses={
+        200: {"content": {t: {} for t in ALLOWED_TYPES}},
+        **errors.errors(404, 503),
+    },
 )
 def download_file(file_id: int, db: Session = Depends(get_db)):
     """The bytes, with the content type recorded at upload."""

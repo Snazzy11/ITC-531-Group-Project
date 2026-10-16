@@ -72,7 +72,9 @@ def list_matches(
 
 
 @router.get(
-    "/matches/{match_id}", response_model=schemas.MatchResponse, responses=errors.errors(404)
+    "/matches/{match_id}",
+    response_model=schemas.MatchResponse,
+    responses=errors.errors(404),
 )
 def get_match(match_id: int, db: Session = Depends(get_db)):
     match = crud.get_match(db, match_id)

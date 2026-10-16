@@ -30,9 +30,7 @@ class Event(BaseModel):
 
     event_id: UUID = Field(default_factory=uuid4)
     schema_version: Literal[1] = 1
-    timestamp: AwareDatetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    timestamp: AwareDatetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     source: str = Field(min_length=1)
 
 

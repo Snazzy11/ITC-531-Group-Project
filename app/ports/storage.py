@@ -156,8 +156,10 @@ def delete(key: str) -> None:
 
 def list_objects(prefix: str = "") -> Iterator[tuple[str, int]]:
     """(key, size) for every current object under prefix, a page at a time."""
-    pages = _internal().get_paginator("list_objects_v2").paginate(
-        Bucket=_bucket(), Prefix=prefix
+    pages = (
+        _internal()
+        .get_paginator("list_objects_v2")
+        .paginate(Bucket=_bucket(), Prefix=prefix)
     )
     for page in pages:
         for obj in page.get("Contents", []):

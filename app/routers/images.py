@@ -31,7 +31,9 @@ def start_image_upload(item_id: int, db: Session = Depends(get_db)):
     if item is None:
         raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
     if item.status not in crud.EDITABLE_STATUSES:
-        raise APIError(409, errors.ITEM_CLOSED, f"a {item.status.value} post cannot be edited")
+        raise APIError(
+            409, errors.ITEM_CLOSED, f"a {item.status.value} post cannot be edited"
+        )
     image = crud.create_image(db, item)
     return schemas.ImageUploadResponse(
         upload_id=image.upload_id,
@@ -56,7 +58,9 @@ def complete_image_upload(item_id: int, upload_id: str, db: Session = Depends(ge
     if image.status is models.ImageStatus.AWAITING_UPLOAD:
         if not storage.exists(storage.pending_key(upload_id)):
             raise APIError(
-                409, errors.UPLOAD_NOT_RECEIVED, "nothing has been uploaded to upload_url yet"
+                409,
+                errors.UPLOAD_NOT_RECEIVED,
+                "nothing has been uploaded to upload_url yet",
             )
         # Queue before recording it: if the broker is down this fails, the
         # status is untouched, and the client can call /complete again.
