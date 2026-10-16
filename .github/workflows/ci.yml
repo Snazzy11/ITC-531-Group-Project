@@ -28,7 +28,7 @@ jobs:
       - name: Lint
         run: python -m ruff check mypipeline
       - name: Test
-        working-directory: mypipeline
+        working-directory: app
         run: pytest -q --cov=service --cov-report=term-missing --cov-fail-under=80
 
   build:
