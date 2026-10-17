@@ -1,14 +1,13 @@
-from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-
 import crud
 import errors
 import schemas
-from database.database import get_db
 from auth import login_required
-from errors import APIError
 from database import models
+from database.database import get_db
+from errors import APIError
+from fastapi import APIRouter, Depends, Query, Response
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["matches"])
 
@@ -74,7 +73,9 @@ def list_matches(
 
 
 @router.get(
-    "/matches/{match_id}", response_model=schemas.MatchResponse, responses=errors.errors(404)
+    "/matches/{match_id}",
+    response_model=schemas.MatchResponse,
+    responses=errors.errors(404),
 )
 def get_match(match_id: int, db: Session = Depends(get_db)):
     match = crud.get_match(db, match_id)

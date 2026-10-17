@@ -20,16 +20,15 @@ item called "".
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
-
 from database.models import ImageStatus, ItemStatus
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 REQUEST = ConfigDict(extra="forbid", str_strip_whitespace=True)
 RESPONSE = model_config = ConfigDict(from_attributes=True)
 
 
-
 # items
+
 
 class ItemBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -74,6 +73,7 @@ class ItemResponse(ItemBase):
 
 # matches
 
+
 class MatchCreate(BaseModel):
     model_config = REQUEST
 
@@ -91,6 +91,7 @@ class MatchResponse(BaseModel):
 
 
 # locations
+
 
 class LocationBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -128,6 +129,7 @@ class LocationAdminResponse(LocationResponse):
 
 # images
 
+
 class ImageResponse(BaseModel):
     model_config = RESPONSE
 
@@ -146,6 +148,7 @@ class ImageUploadResponse(ImageResponse):
 
 # files
 
+
 class FileResponse(BaseModel):
     model_config = RESPONSE
 
@@ -160,27 +163,33 @@ class FileResponse(BaseModel):
 
 # users
 
+
 class UserBase(BaseModel):
     display_name: str = Field(min_length=6, max_length=50)
     real_name: str = Field(min_length=2, max_length=50)
 
+
 # Counts characters; password_util re-checks in bytes. Whitespace is not
 # stripped (unlike REQUEST) because login doesn't strip it either.
-Password = Annotated[str, StringConstraints(strip_whitespace=False, min_length=6, max_length=72)]
+Password = Annotated[
+    str, StringConstraints(strip_whitespace=False, min_length=6, max_length=72)
+]
 
 
 class UserCreate(UserBase):  # No role field: everyone registers as a plain user
     model_config = REQUEST
     password: Password
-    
+
+
 class RoleOut(BaseModel):
     model_config = RESPONSE
     id: int
     name: str
 
+
 class UserResponse(UserBase):
     model_config = RESPONSE
-    
+
     id: int
     display_name: str
     real_name: str
@@ -193,4 +202,3 @@ class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
-

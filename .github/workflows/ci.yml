@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push: {branches: [main]}
+  pull_request: {branches: [main]}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: {python-version: "3.14", cache: pip}
+      - name: Install Python dependencies # Run the python check but completely ignore pillow
+        run: |
+          grep -viE '^(pillow|pillow-heif)([<=>~!;\[]|[[:space:]]|$)' requirements.txt > /tmp/requirements-ci.txt
+          python -m pip install -r /tmp/requirements-ci.txt
+      - name: Install Ruff
+        run: python -m pip install ruff
+      - name: Lint
+        run: python -m ruff check app
+      - name: Test
+        working-directory: .
+        run: pytest tests/ -q --cov=app --cov-report=term-missing
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write          # federated identity; no stored provider key
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+          tags: app:${{ github.sha }}

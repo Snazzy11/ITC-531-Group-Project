@@ -5,13 +5,15 @@ None or an IntegrityError means to a client.
 The one piece of policy that lives here is CLIENT_TRANSITIONS, because it
 describes the item lifecycle rather than any single endpoint.
 """
+
+from datetime import UTC, datetime
+
+import schemas
+from database import models
+from database.models import File, Item, Location, Match, User
+from password_util import hash_password
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone
-from database import models
-import schemas
-from database.models import File, Item, Match, Location, User
-from password_util import hash_password
 
 # Transitions a client may ask for directly via PATCH /items/{id}/status.
 # Anything -> MATCHED and MATCHED -> OPEN are system-only: they happen when a
@@ -34,6 +36,7 @@ EDITABLE_STATUSES = {
 
 
 # items
+
 
 def create_item(db: Session, item: schemas.ItemCreate, user_id: int) -> models.Item:
     # status is not passed: the column defaults to 'open'.
@@ -113,6 +116,7 @@ def delete_item(db: Session, item: models.Item) -> None:
 
 # matches
 
+
 def create_match(db: Session, lost: models.Item, found: models.Item) -> models.Match:
     """Creates the pair and moves both items to 'matched' in one transaction,
     so a unique-constraint violation rolls the status changes back too."""
@@ -160,6 +164,7 @@ def delete_match(db: Session, match: models.Match) -> None:
 
 # locations
 
+
 def create_location(db: Session, location: schemas.LocationCreate) -> models.Location:
     row = models.Location(**location.model_dump())
     db.add(row)
@@ -203,9 +208,7 @@ def set_location_active(
 
 
 def count_items_at_location(db: Session, location_id: int) -> int:
-    return (
-        db.query(models.Item).filter(models.Item.location_id == location_id).count()
-    )
+    return db.query(models.Item).filter(models.Item.location_id == location_id).count()
 
 
 def delete_location(db: Session, location: models.Location) -> None:
@@ -214,6 +217,7 @@ def delete_location(db: Session, location: models.Location) -> None:
 
 
 # images
+
 
 def create_image(db: Session, item: models.Item) -> models.Image:
     # upload_id and status come from the column defaults.
@@ -249,7 +253,7 @@ def set_image_status(
 def mark_image_rejected(db: Session, image: models.Image, reason: str) -> None:
     image.status = models.ImageStatus.REJECTED
     image.reject_reason = reason
-    image.processed_at = datetime.now(timezone.utc)
+    image.processed_at = datetime.now(UTC)
     db.commit()
 
 
@@ -276,12 +280,13 @@ def mark_image_ready(
     image.photo_key = photo_key
     image.content_type = content_type
     image.size_bytes = size_bytes
-    image.processed_at = datetime.now(timezone.utc)
+    image.processed_at = datetime.now(UTC)
     db.commit()
     return replaced_keys
 
 
 # files
+
 
 def add_files(db: Session, rows: list[models.File]) -> list[models.File]:
     """One transaction for the whole batch, so a multi-file upload is indexed
@@ -330,6 +335,7 @@ def delete_file(db: Session, row: models.File) -> None:
 
 
 # users
+
 
 def get_or_create_role(db: Session, name: str) -> models.Role:
     role = db.scalar(select(models.Role).where(models.Role.name == name))

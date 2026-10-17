@@ -1,19 +1,18 @@
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-
 import crud
 import errors
 import schemas
-from database.database import get_db
 from auth import admin
+from database.database import get_db
 from errors import APIError
+from fastapi import APIRouter, Depends, Query
 from password_util import PasswordTooLongError
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["users"])
 
 
-@router.post( # TODO: Needs actual testing
+@router.post(  # TODO: Needs actual testing
     "/users",
     response_model=schemas.UserResponse,
     status_code=201,
@@ -30,6 +29,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
             409, errors.USER_NAME_TAKEN, "a user with that display name already exists"
         ) from None
 
+
 @router.get(
     "/users",
     response_model=list[schemas.UserResponse],
@@ -39,6 +39,6 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 def list_users(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=200),
-    offset: int = Query(default=0, ge=0)
+    offset: int = Query(default=0, ge=0),
 ):
     return crud.list_users(db, limit=limit, offset=offset)

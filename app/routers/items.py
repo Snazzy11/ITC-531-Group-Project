@@ -1,21 +1,20 @@
 import logging
 
-from botocore.exceptions import BotoCoreError, ClientError
-from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-
 import crud
 import errors
 import messaging
 import presenters
 import schemas
+from auth import admin, current_user, require_owner_or_admin
+from botocore.exceptions import BotoCoreError, ClientError
 from database import models
 from database.database import get_db
-from auth import admin, current_user, require_owner_or_admin
 from database.models import User
 from errors import APIError
+from fastapi import APIRouter, Depends, Query, Response
 from ports import storage
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 log = logging.getLogger("lostfound")
 
@@ -38,9 +37,7 @@ def create_item(
     if location is None:
         raise APIError(404, errors.LOCATION_NOT_FOUND, "location not found")
     if not location.is_active:
-        raise APIError(
-            409, errors.LOCATION_INACTIVE, "that location has been retired"
-        )
+        raise APIError(409, errors.LOCATION_INACTIVE, "that location has been retired")
     row = crud.create_item(db, item, user.id)
     messaging.emit("item.created", row.id)
     return presenters.item_out(row)
@@ -49,7 +46,9 @@ def create_item(
 @router.get("/items", response_model=list[schemas.ItemResponse])
 def list_items(
     db: Session = Depends(get_db),
-    type: int | None = Query(default=None, ge=0, le=1, description="0 = lost, 1 = found"),
+    type: int | None = Query(
+        default=None, ge=0, le=1, description="0 = lost, 1 = found"
+    ),
     status: models.ItemStatus | None = None,
     location_id: int | None = Query(default=None, gt=0),
     q: str | None = Query(default=None, max_length=100),
@@ -74,7 +73,11 @@ def list_items(
     return [presenters.item_out(item) for item in items]
 
 
-@router.get("/items/{item_id}", response_model=schemas.ItemResponse, responses=errors.errors(404))
+@router.get(
+    "/items/{item_id}",
+    response_model=schemas.ItemResponse,
+    responses=errors.errors(404),
+)
 def get_item(item_id: int, db: Session = Depends(get_db)):
     item = crud.get_item(db, item_id)
     if item is None:
@@ -102,9 +105,13 @@ def update_item(
     # null", which a plain model_dump() would collapse.
     payload = changes.model_dump(exclude_unset=True)
     if not payload:
-        raise APIError(422, errors.EMPTY_UPDATE, "the request must change at least one field")
+        raise APIError(
+            422, errors.EMPTY_UPDATE, "the request must change at least one field"
+        )
     if item.status not in crud.EDITABLE_STATUSES:
-        raise APIError(409, errors.ITEM_CLOSED, f"a {item.status.value} post cannot be edited")
+        raise APIError(
+            409, errors.ITEM_CLOSED, f"a {item.status.value} post cannot be edited"
+        )
 
     new_location_id = payload.get("location_id")
     if new_location_id is not None and new_location_id != item.location_id:
@@ -112,7 +119,9 @@ def update_item(
         if location is None:
             raise APIError(404, errors.LOCATION_NOT_FOUND, "location not found")
         if not location.is_active:
-            raise APIError(409, errors.LOCATION_INACTIVE, "that location has been retired")
+            raise APIError(
+                409, errors.LOCATION_INACTIVE, "that location has been retired"
+            )
 
     item = crud.update_item(db, item, payload)
     messaging.emit("item.updated", item.id)
@@ -200,14 +209,16 @@ def hard_delete_item(item_id: int, db: Session = Depends(get_db)):
         # the client gets a 409 instead of a 500.
         db.rollback()
         raise APIError(
-            409, errors.ITEM_HAS_MATCHES, "that item is in a match; delete the match first"
+            409,
+            errors.ITEM_HAS_MATCHES,
+            "that item is in a match; delete the match first",
         ) from None
     if upload_ids:
         try:
             for upload_id in upload_ids:
                 storage.delete(storage.pending_key(upload_id))
             storage.delete_prefix(storage.item_prefix(item_id))
-        except (BotoCoreError, ClientError):
+        except BotoCoreError, ClientError:
             # The row is already gone, so leftovers are unreferenced and private.
             log.exception("could not remove stored photos for deleted item %s", item_id)
     return Response(status_code=204)

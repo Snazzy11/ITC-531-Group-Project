@@ -12,9 +12,6 @@ import logging
 import uuid
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query, Response, UploadFile
-from sqlalchemy.orm import Session
-
 import crud
 import errors
 import image_processing
@@ -24,7 +21,9 @@ from database import models
 from database.database import get_db
 from database.models import User
 from errors import APIError
+from fastapi import APIRouter, Depends, Query, Response, UploadFile
 from ports import storage
+from sqlalchemy.orm import Session
 
 log = logging.getLogger("lostfound")
 
@@ -49,7 +48,9 @@ def check(upload: UploadFile) -> tuple[bytes, str]:
     data = upload.file.read(MAX_FILE_BYTES + 1)
     if len(data) > MAX_FILE_BYTES:
         raise APIError(
-            413, errors.FILE_TOO_LARGE, f"each file must be at most {MAX_FILE_BYTES // 2**20} MB"
+            413,
+            errors.FILE_TOO_LARGE,
+            f"each file must be at most {MAX_FILE_BYTES // 2**20} MB",
         )
     matches = image_processing.sniff(data)
     if not matches or any(match not in ALLOWED_TYPES for match in matches):
@@ -123,11 +124,15 @@ def upload_file(
     responses=errors.errors(400, 401, 413, 422, 503),
 )
 def upload_files(
-    files: list[UploadFile], user: User = Depends(current_user), db: Session = Depends(get_db)
+    files: list[UploadFile],
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
 ):
     """All or nothing: one bad file and none of them are stored."""
     if len(files) > MAX_FILES:
-        raise APIError(413, errors.TOO_MANY_FILES, f"at most {MAX_FILES} files per request")
+        raise APIError(
+            413, errors.TOO_MANY_FILES, f"at most {MAX_FILES} files per request"
+        )
     return save(db, user.id, files)
 
 
@@ -136,7 +141,9 @@ def list_files(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
     user_id: int | None = Query(
-        default=None, gt=0, description="Admins only; everyone else sees just their own files"
+        default=None,
+        gt=0,
+        description="Admins only; everyone else sees just their own files",
     ),
     content_type: str | None = Query(default=None, max_length=100),
     name: str | None = Query(
@@ -148,14 +155,23 @@ def list_files(
     if not is_admin(user):
         user_id = user.id
     return crud.list_files(
-        db, user_id=user_id, content_type=content_type, name=name, limit=limit, offset=offset
+        db,
+        user_id=user_id,
+        content_type=content_type,
+        name=name,
+        limit=limit,
+        offset=offset,
     )
 
 
 @router.get(
-    "/{file_id}", response_model=schemas.FileResponse, responses=errors.errors(401, 403, 404)
+    "/{file_id}",
+    response_model=schemas.FileResponse,
+    responses=errors.errors(401, 403, 404),
 )
-def get_file(file_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def get_file(
+    file_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     row = crud.get_file(db, file_id)
     if row is None:
         raise APIError(404, errors.FILE_NOT_FOUND, "file not found")
@@ -166,7 +182,10 @@ def get_file(file_id: int, user: User = Depends(current_user), db: Session = Dep
 @router.get(
     "/{file_id}/content",
     response_class=Response,
-    responses={200: {"content": {t: {} for t in ALLOWED_TYPES}}, **errors.errors(401, 403, 404, 503)},
+    responses={
+        200: {"content": {t: {} for t in ALLOWED_TYPES}},
+        **errors.errors(401, 403, 404, 503),
+    },
 )
 def download_file(
     file_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)
@@ -191,7 +210,9 @@ def download_file(
 
 
 @router.delete("/{file_id}", status_code=204, responses=errors.errors(401, 403, 404))
-def delete_file(file_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def delete_file(
+    file_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     row = crud.get_file(db, file_id)
     if row is None:
         raise APIError(404, errors.FILE_NOT_FOUND, "file not found")

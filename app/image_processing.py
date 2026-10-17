@@ -81,7 +81,7 @@ def reencode(data: bytes) -> bytes:
         raise
     except Image.DecompressionBombError:
         raise Rejected("the image dimensions are too large") from None
-    except Exception:
+    except Exception:  # noqa: BLE001
         # Decoders raise many different exception types on malformed input.
         raise Rejected("the file could not be read as an image") from None
 

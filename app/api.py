@@ -9,11 +9,10 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
-
 import crud
 from database.database import Base, SessionLocal, engine
 from errors import register_error_handlers
+from fastapi import FastAPI, Request
 from ports import storage
 from routers import auth, files, images, items, locations, matches, meta, users
 
@@ -52,6 +51,7 @@ async def attach_request_id(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Request-ID"] = request.state.request_id
     return response
+
 
 # No migration tool by design. When a column changes, drop the database and let
 # this rebuild it; create_all never ALTERs an existing table.

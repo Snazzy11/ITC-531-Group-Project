@@ -1,14 +1,13 @@
+import crud
+import errors
+import presenters
+import schemas
+from auth import admin
+from database.database import get_db
+from errors import APIError
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-
-import presenters
-import crud
-import errors
-import schemas
-from database.database import get_db
-from errors import APIError
-from auth import admin
 
 router = APIRouter(tags=["locations"])
 
@@ -63,7 +62,10 @@ def get_location(location_id: int, db: Session = Depends(get_db)):
 def items_by_location(location_id: int, db: Session = Depends(get_db)):
     if crud.get_location(db, location_id) is None:
         raise APIError(404, errors.LOCATION_NOT_FOUND, "location not found")
-    return [presenters.item_out(item) for item in crud.list_items(db, location_id=location_id)]
+    return [
+        presenters.item_out(item)
+        for item in crud.list_items(db, location_id=location_id)
+    ]
 
 
 @router.patch(
@@ -80,7 +82,9 @@ def update_location(
         raise APIError(404, errors.LOCATION_NOT_FOUND, "location not found")
     payload = changes.model_dump(exclude_unset=True)
     if not payload:
-        raise APIError(422, errors.EMPTY_UPDATE, "the request must change at least one field")
+        raise APIError(
+            422, errors.EMPTY_UPDATE, "the request must change at least one field"
+        )
     try:
         return crud.update_location(db, location, payload)
     except IntegrityError:
@@ -132,13 +136,17 @@ def hard_delete_location(location_id: int, db: Session = Depends(get_db)):
     in_use = crud.count_items_at_location(db, location_id)
     if in_use:
         raise APIError(
-            409, errors.LOCATION_IN_USE, f"{in_use} post(s) use that location; retire it instead"
+            409,
+            errors.LOCATION_IN_USE,
+            f"{in_use} post(s) use that location; retire it instead",
         )
     try:
         crud.delete_location(db, location)
     except IntegrityError:
         db.rollback()
         raise APIError(
-            409, errors.LOCATION_IN_USE, "that location is still referenced by existing posts"
+            409,
+            errors.LOCATION_IN_USE,
+            "that location is still referenced by existing posts",
         ) from None
     return Response(status_code=204)

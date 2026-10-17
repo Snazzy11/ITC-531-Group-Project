@@ -2,20 +2,19 @@
 # store with upload_url, then calls /complete; the image worker does the rest.
 # See milestones/milestone4/STORAGE_DESIGN.md.
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-
-import messaging
-import presenters
 import crud
 import errors
+import messaging
+import presenters
 import schemas
 from auth import current_user, require_owner_or_admin
+from database import models
 from database.database import get_db
 from database.models import User
 from errors import APIError
-from database import models
+from fastapi import APIRouter, Depends
 from ports import storage
+from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["images"])
 
@@ -36,7 +35,9 @@ def start_image_upload(
         raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
     require_owner_or_admin(user, item.user_id)
     if item.status not in crud.EDITABLE_STATUSES:
-        raise APIError(409, errors.ITEM_CLOSED, f"a {item.status.value} post cannot be edited")
+        raise APIError(
+            409, errors.ITEM_CLOSED, f"a {item.status.value} post cannot be edited"
+        )
     image = crud.create_image(db, item)
     return schemas.ImageUploadResponse(
         upload_id=image.upload_id,
@@ -70,7 +71,9 @@ def complete_image_upload(
     if image.status is models.ImageStatus.AWAITING_UPLOAD:
         if not storage.exists(storage.pending_key(upload_id)):
             raise APIError(
-                409, errors.UPLOAD_NOT_RECEIVED, "nothing has been uploaded to upload_url yet"
+                409,
+                errors.UPLOAD_NOT_RECEIVED,
+                "nothing has been uploaded to upload_url yet",
             )
         # Queue before recording it: if the broker is down this fails, the
         # status is untouched, and the client can call /complete again.

@@ -85,7 +85,9 @@ def publish_image_job(item_id: int, image_ref: str) -> None:
         channel.basic_publish(
             exchange="",
             routing_key=IMAGE_QUEUE,
-            body=json.dumps({"item_id": item_id, "image_ref": image_ref}).encode("utf-8"),
+            body=json.dumps({"item_id": item_id, "image_ref": image_ref}).encode(
+                "utf-8"
+            ),
             properties=pika.BasicProperties(
                 content_type="application/json",
                 delivery_mode=2,
@@ -198,5 +200,5 @@ def emit(event_type: str, item_id: int) -> None:
     outage is logged and the request still succeeds."""
     try:
         publish_event(event_type, {"item_id": item_id})
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         log.warning("could not publish %s for item %s: %s", event_type, item_id, exc)

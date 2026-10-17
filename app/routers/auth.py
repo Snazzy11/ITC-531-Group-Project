@@ -1,15 +1,13 @@
-from fastapi import APIRouter, Depends
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 import errors
 import schemas
 from auth import current_user, unauthenticated
 from database.database import get_db
 from database.models import User
-from errors import APIError
+from fastapi import APIRouter, Depends
+from fastapi.security import OAuth2PasswordRequestForm
 from password_util import DUMMY_HASH, verify_password
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 from tokens import TOKEN_MINUTES, create_access_token
 
 router = APIRouter(tags=["auth"])
