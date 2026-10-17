@@ -1,22 +1,20 @@
-from uuid import uuid4
 import datetime as dt
+from uuid import uuid4
 
 import jwt
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import select
-
 from api import app
 from database.database import SessionLocal
-from database.models import User, Role, Location, Item
+from database.models import Item, Location, Role, User
+from fastapi.testclient import TestClient
 from password_util import (
     MAX_PASSWORD_BYTES,
     PasswordTooLongError,
     hash_password,
     verify_password,
 )
-from tokens import SECRET, ALGORITHM
-
+from sqlalchemy import select
+from tokens import ALGORITHM, SECRET
 
 PASSWORD = "a-sufficiently-long-passphrase"
 
@@ -90,17 +88,33 @@ def create_token(user_id, *, exp=None, algorithm=ALGORITHM, secret=SECRET):
     }
     return jwt.encode(payload, secret, algorithm=algorithm)
 
+def user_id_by_name(name):
+    with SessionLocal() as db:
+        return db.scalar(select(User.id).where(User.display_name == name))
+
+
 def test_valid_token_no_role(client: TestClient):
-    token = create_token(10)
+    data = {
+        "display_name": f"student-{uuid4().hex[:12]}",
+        "real_name": "Roleless Student",
+        "password": PASSWORD,
+    }
+    assert client.post("/users", json=data).status_code == 201
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.display_name == data["display_name"]))
+        user.roles = []  # new users get the "user" role; strip it
+        db.commit()
+        user_id = user.id
+    token = create_token(user_id)
     assert client.get("/users", headers=auth_headers(token)).status_code == 403
 
 def test_admin(client: TestClient):
-    token = create_token(1)
+    token = create_token(user_id_by_name("test-admin"))
     assert client.get("/users", headers=auth_headers(token)).status_code == 200
 
 def test_expired_token_is_rejected(client: TestClient):
     expired = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)
-    token = create_token(1, exp=expired)
+    token = create_token(user_id_by_name("test-admin"), exp=expired)
 
     response = client.get("/auth/me", headers=auth_headers(token))
     assert response.status_code == 401
@@ -108,7 +122,7 @@ def test_expired_token_is_rejected(client: TestClient):
 
 def test_unapproved_jwt_algorithm_is_rejected(client: TestClient):
     token = create_token(
-        1,
+        user_id_by_name("test-admin"),
         algorithm="HS384",
         secret="an-unrelated-test-secret",
     )
@@ -121,11 +135,13 @@ def test_password_hashing_round_trip(password=PASSWORD) -> None:
     assert verify_password(password, hashed)
     assert not verify_password("something-else", hashed)
 
-def extra_byte_password_rejected(client: TestClient):
-    long_password = 'a' * MAX_PASSWORD_BYTES
+def test_extra_byte_password_rejected(client: TestClient):
+    long_password = "a" * (MAX_PASSWORD_BYTES + 1)
     data = {
         "display_name": f"student-{uuid4().hex[:12]}",
         "real_name": "Long Password",
         "password": long_password,
     }
-    assert client.post("/users", json=data).status_code == 403
+    assert client.post("/users", json=data).status_code == 422
+    with pytest.raises(PasswordTooLongError):
+        hash_password(long_password)
