@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
-        with: {python-version: "3.12", cache: pip}
+        with: {python-version: "3.14", cache: pip}
       - name: Install Python dependencies # Run the python check but completely ignore pillow
         run: |
           grep -viE '^(pillow|pillow-heif)([<=>~!;\[]|[[:space:]]|$)' requirements.txt > /tmp/requirements-ci.txt
