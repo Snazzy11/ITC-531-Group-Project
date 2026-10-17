@@ -1,18 +1,20 @@
 """Lost & Found API: app setup only. The endpoints live in routers/, one module
-per concern (items, matches, locations, images, users, files, meta).
+per concern (items, matches, locations, images, users, files, meta, auth).
 
     uvicorn api:app --reload      # docs at http://127.0.0.1:8000/docs
 """
 
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 
-from database.database import Base, engine
+import crud
+from database.database import Base, SessionLocal, engine
 from errors import register_error_handlers
 from fastapi import FastAPI, Request
 from ports import storage
-from routers import files, images, items, locations, matches, meta, users
+from routers import auth, files, images, items, locations, matches, meta, users
 
 logging.basicConfig(level=logging.INFO)
 
@@ -20,6 +22,8 @@ logging.basicConfig(level=logging.INFO)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     storage.ensure_bucket()
+    with SessionLocal() as db:
+        crud.seed_auth(db, os.getenv("ADMIN_DISPLAY_NAME"), os.getenv("ADMIN_PASSWORD"))
     yield
 
 
@@ -29,7 +33,7 @@ app = FastAPI(title="Lost & Found API", version="0.2.0", lifespan=lifespan)
 # in FastAPI's default {"detail": "..."} shape.
 register_error_handlers(app)
 
-for module in (items, matches, locations, images, users, files, meta):
+for module in (items, matches, locations, images, users, files, meta, auth):
     app.include_router(module.router)
 
 

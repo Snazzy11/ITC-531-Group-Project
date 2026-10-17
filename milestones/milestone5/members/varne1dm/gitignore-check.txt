@@ -1,0 +1,16 @@
+(.venv) mac@macs-desktop:~/ITC-531-Group-Project$ git status --ignored
+On branch milestone5/auth
+Ignored files:
+  (use "git add -f <file>..." to include in what will be committed)
+        .env.local
+        .pytest_cache/
+        .venv/
+        app/__pycache__/
+        app/database/__pycache__/
+        app/ports/__pycache__/
+        app/routers/__pycache__/
+        store.env
+        tests/__pycache__/
+
+no changes added to commit (use "git add" and/or "git commit -a")
+(.venv) mac@macs-desktop:~/ITC-531-Group-Project$

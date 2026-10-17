@@ -2,8 +2,8 @@ import crud
 import errors
 import presenters
 import schemas
+from auth import admin
 from database.database import get_db
-from dependencies import admin
 from errors import APIError
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.exc import IntegrityError

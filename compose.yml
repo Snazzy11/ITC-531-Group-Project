@@ -10,6 +10,9 @@ services:
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
       BROKER_PASSWORD: ${BROKER_PASSWORD:?set BROKER_PASSWORD in .env.local}
       DATABASE_URL: "postgresql+psycopg2://seekr:seekr-devonly@db:5432/seekr"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.local}
+      ADMIN_DISPLAY_NAME: ${ADMIN_DISPLAY_NAME:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
       interval: 5s

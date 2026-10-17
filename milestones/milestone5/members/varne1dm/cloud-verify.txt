@@ -1,0 +1,21 @@
+================================================================
+ITC 531 capability contract check
+adapter : aws
+date    : 2026-10-11 18:36 UTC
+================================================================
+provider:        Amazon Web Services
+region:          us-east-2
+compute service: Amazon Elastic Container Service
+storage service: Amazon S3
+auth model:      Scoped IAM User
+contract check:  10/10/2026
+----------------------------------------------------------------
+C1 compute      : OK - ECS cluster status: ACTIVE
+C2 storage      : OK - Endpoint reachable, Name: itc531-bucket
+C3 credential   : OK - Authenticated with IAM policy: verification-script-policy
+C4 enumerate    : OK - Cluster reachable and enumerated: arn:aws:ecs:us-east-2:706967260114:cluster/itc531_cluster
+C5 spend alert  : $5
+C6 cost model   : $100 Free Credit / 6 month free account period / 5 GB Storage - More than satisfiable for all our expected needs.
+----------------------------------------------------------------
+================================================================
+CONTRACT SATISFIED. You may now create resources. Submit this output.

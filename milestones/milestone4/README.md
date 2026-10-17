@@ -41,7 +41,7 @@ In the repo the code is at the same paths from the root. `evidence/capture.sh` r
 You need Docker with Compose v2, `curl` and `jq`. From the repo root:
 
 ```sh
-cp .env.local.example .env.local  # then fill in the broker values (see below)
+cp .env.local.example .env.local  # then fill in the broker values and JWT_SECRET (see below)
 cp store.env.example store.env  # the local defaults work as is
 docker compose --env-file .env.local up -d --build --wait
 curl -s http://localhost:8000/api/v1/health  # should print {"status":"ok"}
@@ -66,16 +66,20 @@ and `.env.local` has the broker settings. Compose sets the rest.
 | `S3_PUBLIC_ENDPOINT_URL` | `store.env` | The address presigned URLs get signed for, so the client has to be able to reach it. `http://localhost:9000` locally. Leave it unset if it's the same as `S3_ENDPOINT_URL` |
 | `DATABASE_URL` | `compose.yml` | Postgres URL for the app and worker. You only need it by hand for `scripts/api_tester.py` (below) |
 | `BROKER_HOST` | `compose.yml` | The broker's hostname, `broker` |
-| `ADMIN_TOKEN` | optional | What admin routes expect in `X-Admin-Token`. Defaults to `dev-admin-token` until we have real login (Milestone 5) |
+| `JWT_SECRET` | `.env.local` | Signs login tokens. Required; the app won't start without it. Generate one with `openssl rand -hex 32` |
+| `ADMIN_DISPLAY_NAME`, `ADMIN_PASSWORD` | `.env.local` (optional) | An admin account the app creates on startup. You need one to call the admin routes below. See the Authentication section of the main README |
 
 ## Every endpoint
 
-Run these in order on a fresh stack, since the ids assume that. Admin routes need `X-Admin-Token`. There's no login yet, so `user_id` is just trusted.
+Run these in order on a fresh stack, since the ids assume that. Most write routes need a login token (`Authorization: Bearer ...`) and the admin routes need an admin's token; see the Authentication section of the main README. The commands below sign in first.
 
 ```sh
 API=http://localhost:8000/api/v1
-ADMIN='X-Admin-Token: dev-admin-token'
 JSON='Content-Type: application/json'
+
+# ADMIN_DISPLAY_NAME and ADMIN_PASSWORD are the values from .env.local
+login() { curl -s -X POST $API/auth/login -d "username=$1&password=$2" | jq -r .access_token; }
+ADMIN="Authorization: Bearer $(login "$ADMIN_DISPLAY_NAME" "$ADMIN_PASSWORD")"
 
 # Makes two sample files inside the app container so you don't have to install anything
 sample() { docker compose --env-file .env.local exec -T app python -c "import io, sys; from PIL import Image; b = io.BytesIO(); Image.new('RGB', (800, 600), 'teal').save(b, '$1'); sys.stdout.buffer.write(b.getvalue())"; }
@@ -107,30 +111,32 @@ curl -s -X DELETE $API/locations/2/hard -H "$ADMIN"  # real delete, works since 
 ### Users
 
 ```sh
-curl -s -X POST $API/users -H "$JSON" -d '{"display_name":"tester1","real_name":"Test User","password":"secret123","is_admin":false}'
-curl -s $API/users
+curl -s -X POST $API/users -H "$JSON" -d '{"display_name":"tester1","real_name":"Test User","password":"secret123"}'  # id 2 (the admin is id 1)
+AUTH="Authorization: Bearer $(login tester1 secret123)"  # used for everything below that isn't an admin route
+curl -s $API/auth/me -H "$AUTH"  # who the token says you are
+curl -s $API/users -H "$ADMIN"  # admin only
 ```
 
 ### Items
 
 ```sh
-curl -s -X POST $API/items -H "$JSON" -d '{"name":"Blue keys","description":"carabiner, 3 keys","type":0,"location_id":1,"user_id":1}'  # id 1, lost
-curl -s -X POST $API/items -H "$JSON" -d '{"name":"Keyring","type":1,"location_id":1,"user_id":1}'  # id 2, found
+curl -s -X POST $API/items -H "$JSON" -H "$AUTH" -d '{"name":"Blue keys","description":"carabiner, 3 keys","type":0,"location_id":1}'  # id 1, lost
+curl -s -X POST $API/items -H "$JSON" -H "$AUTH" -d '{"name":"Keyring","type":1,"location_id":1}'  # id 2, found
 curl -s "$API/items?type=1&q=key&limit=20&offset=0"
 curl -s $API/items/1
-curl -s -X PATCH $API/items/1 -H "$JSON" -d '{"description":"carabiner, 3 brass keys"}'
+curl -s -X PATCH $API/items/1 -H "$JSON" -H "$AUTH" -d '{"description":"carabiner, 3 brass keys"}'
 curl -s $API/locations/1/items
 ```
 
 ### Matches
 
 ```sh
-curl -s -X POST $API/matches -H "$JSON" -d '{"lost_item_id":1,"found_item_id":2}'
+curl -s -X POST $API/matches -H "$JSON" -H "$AUTH" -d '{"lost_item_id":1,"found_item_id":2}'
 curl -s $API/matches
 curl -s $API/matches/1
 curl -s $API/items/1/matches
-curl -s -X PATCH $API/items/1/status -H "$JSON" -d '{"status":"returned"}'
-curl -s -X DELETE $API/matches/1  # item 1 stays returned, item 2 goes back to open
+curl -s -X PATCH $API/items/1/status -H "$JSON" -H "$AUTH" -d '{"status":"returned"}'
+curl -s -X DELETE $API/matches/1 -H "$AUTH"  # item 1 stays returned, item 2 goes back to open
 ```
 
 ### Item photos (presigned)
@@ -138,10 +144,10 @@ curl -s -X DELETE $API/matches/1  # item 1 stays returned, item 2 goes back to o
 The photo goes right to the store and never through the API.
 
 ```sh
-UPLOAD=$(curl -s -X POST $API/items/2/images); echo "$UPLOAD"
+UPLOAD=$(curl -s -X POST $API/items/2/images -H "$AUTH"); echo "$UPLOAD"
 UPLOAD_ID=$(echo "$UPLOAD" | jq -r .upload_id)
 curl -s -X PUT --upload-file photo.jpg "$(echo "$UPLOAD" | jq -r .upload_url)" -w '%{http_code}\n'
-curl -s -X POST $API/items/2/images/$UPLOAD_ID/complete  # 202, processing
+curl -s -X POST $API/items/2/images/$UPLOAD_ID/complete -H "$AUTH"  # 202, processing
 curl -s $API/items/2/images/$UPLOAD_ID  # should say ready after a second
 curl -s -o fetched.jpg -w '%{http_code} %{content_type}\n' "$(curl -s $API/items/2 | jq -r .photo_url)"
 ```
@@ -149,18 +155,18 @@ curl -s -o fetched.jpg -w '%{http_code} %{content_type}\n' "$(curl -s $API/items
 ### Files (through the API)
 
 ```sh
-curl -s -X POST $API/files -F user_id=1 -F file=@receipt.pdf
-curl -s -X POST $API/files/batch -F user_id=1 -F files=@receipt.pdf -F files=@photo.jpg
-curl -s "$API/files?content_type=application/pdf&name=receipt&limit=20&offset=0"
-curl -s $API/files/1
-curl -s -D - -o downloaded.pdf $API/files/1/content  # Content-Type: application/pdf
-curl -s -X DELETE $API/files/1 -w '%{http_code}\n'  # 204, the object and the row are both gone
+curl -s -X POST $API/files -H "$AUTH" -F file=@receipt.pdf  # owned by the signed-in user
+curl -s -X POST $API/files/batch -H "$AUTH" -F files=@receipt.pdf -F files=@photo.jpg
+curl -s -H "$AUTH" "$API/files?content_type=application/pdf&name=receipt&limit=20&offset=0"
+curl -s -H "$AUTH" $API/files/1
+curl -s -D - -o downloaded.pdf -H "$AUTH" $API/files/1/content  # Content-Type: application/pdf
+curl -s -X DELETE $API/files/1 -H "$AUTH" -w '%{http_code}\n'  # 204, the object and the row are both gone
 ```
 
 ### Withdrawing and deleting items
 
 ```sh
-curl -s -X DELETE $API/items/2 -w '%{http_code}\n'  # withdraw (soft delete)
+curl -s -X DELETE $API/items/2 -H "$AUTH" -w '%{http_code}\n'  # withdraw (soft delete)
 curl -s -X DELETE $API/items/2/hard -H "$ADMIN" -w '%{http_code}\n'  # real delete, the photo gets deleted too
 ```
 
@@ -171,7 +177,7 @@ With the stack running:
 - `scripts/api_tests.sh` is a curl walkthrough of the main flows.
 - `scripts/api_tester.py` checks every rule in the error contract. It wipes the database first. Put the Postgres password from `compose.yml` in the URL:
   ```sh
-  PYTHONPATH=app DATABASE_URL='postgresql+psycopg2://seekr:<password>@localhost:5432/seekr' uv run --with httpx2 python scripts/api_tester.py
+  PYTHONPATH=app JWT_SECRET=$(openssl rand -hex 32) DATABASE_URL='postgresql+psycopg2://seekr:<password>@localhost:5432/seekr' uv run --with httpx2 python scripts/api_tester.py
   ```
 - `scripts/storage_report.py` lists every object, flags unstamped and off-scheme keys, and checks the store and the database against each other both ways. Exit code 0 means clean, 1 means it found something, 2 means it couldn't run:
   ```sh

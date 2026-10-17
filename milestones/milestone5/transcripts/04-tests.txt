@@ -1,0 +1,31 @@
+(.venv) mac@macs-desktop:~/ITC-531-Group-Project$ PYTHONPATH=app python -m pytest tests/security_tests.py -v
+========================================================== test session starts ===========================================================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0 -- /home/mac/ITC-531-Group-Project/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/mac/ITC-531-Group-Project
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 10 items
+
+tests/security_tests.py::test_register_login_user PASSED                                                                           [ 10%]
+tests/security_tests.py::test_login_rejects_wrong_password PASSED                                                                  [ 20%]
+tests/security_tests.py::test_login_unknown_user PASSED                                                                            [ 30%]
+tests/security_tests.py::test_me_rejects_missing_and_bad_tokens PASSED                                                             [ 40%]
+tests/security_tests.py::test_no_token PASSED                                                                                      [ 50%]
+tests/security_tests.py::test_valid_token_no_role PASSED                                                                           [ 60%]
+tests/security_tests.py::test_admin PASSED                                                                                         [ 70%]
+tests/security_tests.py::test_expired_token_is_rejected PASSED                                                                     [ 80%]
+tests/security_tests.py::test_unapproved_jwt_algorithm_is_rejected PASSED                                                          [ 90%]
+tests/security_tests.py::test_password_hashing_round_trip PASSED                                                                   [100%]
+
+============================================================ warnings summary ============================================================
+.venv/lib/python3.14/site-packages/starlette/testclient.py:53
+  /home/mac/ITC-531-Group-Project/.venv/lib/python3.14/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+tests/security_tests.py::test_unapproved_jwt_algorithm_is_rejected
+  /home/mac/ITC-531-Group-Project/.venv/lib/python3.14/site-packages/jwt/api_jwt.py:149: InsecureKeyLengthWarning: The HMAC key is 24 bytes long, which is below the minimum recommended length of 48 bytes for SHA384. See RFC 7518 Section 3.2.
+    return self._jws.encode(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+===================================================== 10 passed, 2 warnings in 0.89s =====================================================
