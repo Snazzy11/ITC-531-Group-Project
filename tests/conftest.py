@@ -37,3 +37,14 @@ sqlalchemy.create_engine = _sqlite_engine
 from ports import storage  # noqa: E402
 
 storage.ensure_bucket = lambda: None
+
+# CI installs without pillow (it is slow to build), and none of these tests
+# decode an image. Stub it only when it is genuinely missing.
+try:
+    import PIL  # noqa: F401
+    import pillow_heif  # noqa: F401
+except ModuleNotFoundError:
+    from unittest.mock import MagicMock
+
+    for name in ("PIL", "PIL.Image", "PIL.ImageOps", "pillow_heif"):
+        sys.modules[name] = MagicMock()
