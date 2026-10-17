@@ -3,14 +3,13 @@
 They live in their own module so a router can import them without importing
 api.py (which imports every router).
 """
-from fastapi import Depends
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
-
 import errors
 from database.database import get_db
 from database.models import User
 from errors import APIError
+from fastapi import Depends
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
 from tokens import TokenError, read_access_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
