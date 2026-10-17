@@ -13,7 +13,7 @@ def handle_message(channel, method, properties, body):
         event = json.loads(body)
         if not isinstance(event, dict):
             raise TypeError("event must be a JSON object")
-    except TypeError as error:
+    except (TypeError, ValueError) as error:
         log.error("Rejecting invalid notification event: %s", error)
         channel.basic_reject(delivery_tag=method.delivery_tag, requeue=False)
         return
