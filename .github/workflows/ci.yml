@@ -46,7 +46,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: app/Dockerfile
+          file: Dockerfile
           platforms: linux/amd64
           push: false
           cache-from: type=gha
