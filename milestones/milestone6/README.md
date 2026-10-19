@@ -125,3 +125,13 @@ Final ECS check (service name, desired tasks, running tasks, task definition):
 Output:
 
 seekr	1	1	arn:aws:ecs:us-east-2:533267434818:task-definition/seekr:3
+
+
+## Green run of CI
+https://github.com/Snazzy11/ITC-531-Group-Project/actions/runs/39197002008
+
+## Split of work
+Devon did part 1
+Parker did parts 2 & 4
+Doug did parts 3, 5, & 6
+
