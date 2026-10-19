@@ -417,17 +417,66 @@ adapter_enumerate() {
 }
 
 # -----------------------------------------------------------------------------
-# adapter_destroy — remove everything adapter_deploy created, then verify by
-# calling adapter_enumerate and failing if anything remains.
-#
-# Object storage note: a bucket delete fails while objects remain, and on a
-# versioned bucket "remove the objects" also means the non-current versions AND
-# the delete markers. app/ports/storage.py:empty_bucket() does this correctly —
-# call it rather than reimplementing it.
+# Remove the configured ECS service. Other AWS resources stay in place.
 # -----------------------------------------------------------------------------
-adapter_destroy() {
-  echo "NOT IMPLEMENTED" >&2; return 1
-}
+adapter_destroy() (
+  local result status failure tasks task
+  export AWS_PAGER="" MSYS_NO_PATHCONV=1
+  if [[ -z "${CLI:-}" || -z "${AWS_REGION:-}" ||
+        -z "${ECS_CLUSTER:-}" || -z "${SERVICE_NAME:-}" ]]; then
+    echo "Set CLI, AWS_REGION, ECS_CLUSTER and SERVICE_NAME in aws.env." >&2
+    return 1
+  fi
+
+  result=$("$CLI" ecs describe-services --region "$AWS_REGION" \
+    --cluster "$ECS_CLUSTER" --services "$SERVICE_NAME" \
+    --query '[services[0].status, failures[0].reason]' --output text) || return 1
+  result=${result//$'\r'/}
+  read -r status failure <<< "$result"
+
+  if [[ "$status" == None && "$failure" == MISSING ]]; then
+    echo "$SERVICE_NAME is already removed."
+  elif [[ "$failure" != None ]]; then
+    echo "Cannot remove service: $failure." >&2
+    return 1
+  elif [[ "$status" == ACTIVE || "$status" == DRAINING || "$status" == INACTIVE ]]; then
+    if [[ "$status" == ACTIVE ]]; then
+      "$CLI" ecs update-service --region "$AWS_REGION" --cluster "$ECS_CLUSTER" \
+        --service "$SERVICE_NAME" --desired-count 0 >/dev/null || return 1
+      "$CLI" ecs wait services-stable --region "$AWS_REGION" \
+        --cluster "$ECS_CLUSTER" --services "$SERVICE_NAME" || return 1
+    fi
+
+    # Wait for tasks that are still stopping.
+    tasks=$("$CLI" ecs list-tasks --region "$AWS_REGION" --cluster "$ECS_CLUSTER" \
+      --service-name "$SERVICE_NAME" --desired-status STOPPED \
+      --query taskArns --output text) || return 1
+    tasks=${tasks//$'\r'/}
+    for task in $tasks; do
+      if [[ "$task" != None ]]; then
+        "$CLI" ecs wait tasks-stopped --region "$AWS_REGION" \
+          --cluster "$ECS_CLUSTER" --tasks "$task" || return 1
+      fi
+    done
+
+    if [[ "$status" == ACTIVE ]]; then
+      "$CLI" ecs delete-service --region "$AWS_REGION" \
+        --cluster "$ECS_CLUSTER" --service "$SERVICE_NAME" >/dev/null || return 1
+    fi
+    "$CLI" ecs wait services-inactive --region "$AWS_REGION" \
+      --cluster "$ECS_CLUSTER" --services "$SERVICE_NAME" || return 1
+  else
+    echo "Cannot remove service in state: $status." >&2
+    return 1
+  fi
+
+  result=$(adapter_enumerate) || return 1
+  if [[ -n "$result" ]]; then
+    printf 'ECS services still remain:\n%s\n' "$result" >&2
+    return 1
+  fi
+  echo "ECS service cleanup finished. Other AWS resources were not removed."
+)
 
 # =============================================================================
 # ILLUSTRATIVE FRAGMENTS
