@@ -1,0 +1,58 @@
+# Milestone6 Part 5 evidence
+
+cd /c/dev/SystemDesign/tmp/seekr-part1-run
+cp /c/dev/SystemDesign/output/module7-team-ci/milestones/milestone5/members/varne1dm/aws.sh adapters/aws.sh
+cp //wsl.localhost/Ubuntu/home/devburton/itc531/module_7/scripts/cloud-down.sh scripts/cloud-down.sh
+set -a
+source adapters/aws.env
+set +a
+source adapters/aws.sh
+adapter_deploy
+IMAGE_REF=533267434818.dkr.ecr.us-east-2.amazonaws.com/seekr:be5b7ad7f3768bcacd6ccd278b86bf9853188365
+{"status":"ok","checks":{"database":"ok"}}
+http=404
+https://tusbb8zllh.execute-api.us-east-2.amazonaws.com
+bash scripts/cloud-audit.sh aws
+ITC 531 cloud audit — adapter=aws — 2026-10-19 03:00 UTC
+  provider:        Amazon Web Services
+  region:          us-east-2
+  compute service: Amazon Elastic Container Service
+  storage service: Amazon S3
+  auth model:      IAM user seekr-deployer
+  contract check:  Full contract not rerun for this Part 1 test
+---------------------------------------------------------------
+ecs-service	arn:aws:ecs:us-east-2:533267434818:service/itc531_cluster/seekr	ACTIVE
+---------------------------------------------------------------
+NOT CLEAN — 1 resource(s) exist.
+
+If you are finished with them:   bash scripts/cloud-down.sh aws
+If you are mid-assignment that is fine — but check again when you finish.
+ITC531_ASSUME_YES=1 bash scripts/cloud-down.sh aws
+ITC 531 teardown — adapter=aws — 2026-10-19 03:00 UTC
+  provider:        Amazon Web Services
+  region:          us-east-2
+  compute service: Amazon Elastic Container Service
+  storage service: Amazon S3
+  auth model:      IAM user seekr-deployer
+  contract check:  Full contract not rerun for this Part 1 test
+---------------------------------------------------------------
+About to destroy:
+  ecs-service	arn:aws:ecs:us-east-2:533267434818:service/itc531_cluster/seekr	ACTIVE
+---------------------------------------------------------------
+ECS service cleanup finished. Other AWS resources were not removed.
+---------------------------------------------------------------
+Verifying...
+CLEAN. Nothing remains.
+
+Save this output — it is the teardown evidence the final project requires.
+bash scripts/cloud-audit.sh aws
+ITC 531 cloud audit — adapter=aws — 2026-10-19 03:07 UTC
+  provider:        Amazon Web Services
+  region:          us-east-2
+  compute service: Amazon Elastic Container Service
+  storage service: Amazon S3
+  auth model:      IAM user seekr-deployer
+  contract check:  Full contract not rerun for this Part 1 test
+---------------------------------------------------------------
+CLEAN — no resources exist.
+---------------------------------------------------------------
