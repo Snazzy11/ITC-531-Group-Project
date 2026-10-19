@@ -61,7 +61,7 @@ jobs:
 
 Notes:
 1. I had to exclude pillow from the dependencies, more information in troubleshooting section
-2. I had to remove the flag about minimum test coverage. We simply dont have enough tests to warrant it, as we weren't really asked to write very many. That simple flag doesnt affect the way we wrote this file or achieved our goals, so I dont think it is a big deal. It was tested that it correctly fails when below the threshold though.
+2. I had to lower the flag about minimum test coverage. We dont have enough tests to warrant that high of a number.
 3. Refer to github_no_secrets.png for the no secrets evidence.
 4. Using OIDC on AWS requires upgrading to paid plan. So we could not do it.
 
