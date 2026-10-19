@@ -15,9 +15,9 @@ from errors import register_error_handlers
 from fastapi import FastAPI, Request
 from ports import storage
 from routers import auth, files, images, items, locations, matches, meta, users
+from prometheus_client import Counter, make_asgi_app
 
 logging.basicConfig(level=logging.INFO)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,6 +28,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Lost & Found API", version="0.2.0", lifespan=lifespan)
+
+# Request count labeled by method, route and status, built with prometheus_client as in tutorial 2.1.
+REQUESTS = Counter("seekr_requests", "Requests", ["method", "route", "status"])
+app.mount("/metrics", make_asgi_app())
 
 # Points every kind of failure at the handlers in errors.py, so nothing escapes
 # in FastAPI's default {"detail": "..."} shape.
@@ -50,6 +54,9 @@ async def attach_request_id(request: Request, call_next):
     request.state.request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
     response = await call_next(request)
     response.headers["X-Request-ID"] = request.state.request_id
+    route = request.scope.get("route")
+    template = getattr(route, "path", "__unmatched__")
+    REQUESTS.labels(request.method, template, response.status_code).inc()
     return response
 
 
