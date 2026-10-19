@@ -34,7 +34,7 @@ jobs:
         run: python -m ruff check app
       - name: Test
         working-directory: .
-        run: pytest tests/ -q --cov=app --cov-report=term-missing
+        run: pytest tests/ -q --cov=app --cov-report=term-missing --cov-fail-under=30
 
   build:
     needs: test
@@ -61,7 +61,7 @@ jobs:
 
 Notes:
 1. I had to exclude pillow from the dependencies, more information in troubleshooting section
-2. I had to lower the flag about minimum test coverage. We dont have enough tests to warrant that high of a number.
+2. The coverage gate is `--cov-fail-under=30`. We lowered it from a higher number because our suite does not yet cover enough of the app to meet it. 30 is below what the suite currently reaches, so the gate passes.
 3. Refer to github_no_secrets.png for the no secrets evidence.
 4. Using OIDC on AWS requires upgrading to paid plan. So we could not do it.
 
