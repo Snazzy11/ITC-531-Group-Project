@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: seekr-app
+    # Trailing slash is required when the exporter is mounted as an ASGI
+    # sub-application: /metrics returns nothing and /metrics/ returns the data.
+    # Students read the empty response as broken instrumentation; it is not.
+    metrics_path: /metrics/
+    static_configs:
+      - targets: ["app:8000"]
