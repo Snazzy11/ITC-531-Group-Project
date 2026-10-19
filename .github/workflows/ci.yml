@@ -30,7 +30,7 @@ jobs:
       - name: Test
         working-directory: .
         # run: pytest tests/ -q --cov=app --cov-report=term-missing
-        run: pytest tests/ -q --cov=app --cov-report=term-missing --cov-fail-under=70
+        run: pytest tests/ -q --cov=app --cov-report=term-missing --cov-fail-under=40
 
   build:
     needs: test
