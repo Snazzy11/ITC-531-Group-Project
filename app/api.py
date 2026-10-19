@@ -14,8 +14,8 @@ from database.database import Base, SessionLocal, engine
 from errors import register_error_handlers
 from fastapi import FastAPI, Request
 from ports import storage
-from routers import auth, files, images, items, locations, matches, meta, users
 from prometheus_client import Counter, make_asgi_app
+from routers import auth, files, images, items, locations, matches, meta, users
 
 logging.basicConfig(level=logging.INFO)
 
