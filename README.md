@@ -18,8 +18,6 @@ Copy `.env.local` and fill it in: `cp .env.local.example .env.local`
 | `JWT_SECRET`                           | Required. Signs login tokens. Generate one with `openssl rand -hex 32`. The app will not start without it |
 | `ADMIN_DISPLAY_NAME`, `ADMIN_PASSWORD` | Needed to use any admin route (managing locations, hard deletes, listing users). The app creates this admin account on startup. Display name up to 50 characters, password up to 72 bytes. See [Authentication](#authentication) |
 
-Copy the store env file, the defaults there will work: `cp store.env.example store.env`
-
 Bring the container up and test it:
 ```sh
 docker compose --env-file .env.local up -d --build --wait
@@ -250,6 +248,29 @@ Rules to follow:
 - Add the new rules to `scripts/api_tester.py`: no token (401), the wrong user
   (403), and the right user (2xx).
 - Update the **Who can call what** table above.
+
+# Pipeline
+
+## test
+Sets up Python,
+Installs Python dependencies from requirements.txt,
+Uses Ruff to check for linting violations,
+Run Python tests and reports testing coverage.
+## build
+Builds the container image, gated by the test.
+
+# Dashboard
+The Grafana dashboard is reachable from http://localhost:3000
+The two panels included show the request rate over the past 5 minutes as well as the percentage of requests that were errors over the past 5 minutes.
+A username/password must be configured when filling in the .env.local file.
+
+# Troubleshooting
+## Doug
+Doug was initially unable to get the project to build after adding the code for Prometheus and Grafana; Doug realized prometheus-client was absent from our project's requirements.txt. Attempting to install it gave them another error, ultimately they needed to whitelist ```files.pythonhosted.org``` in their network adblocker because it was unreachable and as such was preventing the install.
+## Devon
+Initial deployment kep giving 404 codes due to only having a "/health" route and lacking a "/" route.
+## Parker
+Because we generate the requirements.txt with UV, the requirements state the hashes of the release instead of just the version. For Pillow specifically, it was throwing errors because it could not get the right version. Parker first tried building it from source in the CI script, but the runner had outdated dependencies. Parker ended up enclosing that from the dependencies with an extra flag in the pip command, and we will not need to run any tests using Pillow in the future.
 
 # Design docs
 - `docs/Architecture.drawio.html` - the services, the store, and the presigned path
