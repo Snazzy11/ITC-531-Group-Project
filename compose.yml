@@ -4,7 +4,7 @@ services:
   app:
     build: .
     env_file:
-      - store.env
+      - .env.local
     environment:
       BROKER_HOST: broker
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
@@ -42,7 +42,7 @@ services:
     build: .
     command: ["python", "-m", "image_worker"]
     env_file:
-      - store.env
+      - .env.local
     environment:
       BROKER_HOST: broker
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
@@ -99,6 +99,36 @@ services:
       timeout: 15s
       retries: 10
       start_period: 30s
+  
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      app:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:?set GRAFANA_USER in .env.local}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env.local}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
 
   db:
     image: postgres:16.6-alpine3.20
@@ -141,3 +171,5 @@ volumes:
   eventlogs:
   seekr_data:
   s3data:
+  prometheus-data:
+  grafana-data:
