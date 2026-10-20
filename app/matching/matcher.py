@@ -10,8 +10,7 @@ from matching.match_score import MatchScore
 # How many suggestions each item keeps
 MAX_SUGGESTIONS = 5
 
-# Words that say nothing about the item itself, so sharing them is not a sign of
-# a match. "lost" and "found" are here because nearly every description has one.
+# A shortlist of common words that dont say anything about the item.
 COMMON_WORDS = frozenset(
     {
         "a", "an", "the", "and", "or", "but", "nor", "so",
@@ -68,8 +67,7 @@ class ItemMatcher:
         return len(self._heap)
 
 def words(text: str) -> list[str]:
-    """Lowercase words with surrounding punctuation stripped ("zipper," ->
-    "zipper") and COMMON_WORDS left out."""
+    """Lowercase the words, strip punctuation, and remove common words"""
     stripped = (w.strip(string.punctuation) for w in text.lower().split())
     return [w for w in stripped if w and w not in COMMON_WORDS]
 
@@ -92,9 +90,9 @@ def calculate_match_score(item: models.Item, candidate: models.Item) -> MatchSco
 
 
 def get_potential_matches(db: Session, item_id: int, max_size: int = MAX_SUGGESTIONS) -> list[MatchScore]:
-    """Best first. Only open items of the other type are candidates, since
-    those are the only pairs POST /matches accepts, and pairs with no words in
-    common are left out."""
+    """ Create list of potential matches with the highest scores, the best first.
+    Only compares open items of the opposite type (lost/found).
+    Pairs with no words in common are left out."""
     item: models.Item | None = (
         db.query(models.Item)
         .filter(models.Item.id == item_id)

@@ -264,9 +264,7 @@ class Match(Base):
 
 
 class PotentialMatch(Base):
-    """A lost/found pair the matching worker scored. Users review these and
-    confirm the right one with POST /matches. Derived data, so deleting either
-    item deletes the suggestion."""
+    """A lost/found pair the with potential score."""
 
     __tablename__ = "potential_matches"
     __table_args__ = (
@@ -288,7 +286,7 @@ class PotentialMatch(Base):
         nullable=False,
         index=True,
     )
-    # Higher is better. No upper limit: it grows with the number of shared words.
+    # Higher is better
     score: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

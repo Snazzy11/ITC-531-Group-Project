@@ -1,14 +1,6 @@
 """Request and response schemas.
 
-One deliberate departure from the draft you sent: `status` is typed as the
-real `ItemStatus` enum, not a Literal of strings. Reading from the ORM yields
-an enum member, and `str`-Enum members hash by name ("OPEN"), not value
-("open"), so Literal matching is a footgun. The JSON on the wire is identical:
-"open", "matched", ...
-
-An item `description` is required and 50 to 1000 characters long. The `items`
-table enforces the same with NOT NULL and a CHECK, so every stored row also
-passes *response* validation.
+An item `description` is required.
 
 `extra="forbid"` on the request models is optional but cheap insurance: a
 client that POSTs {"nmae": ...} gets a 422 instead of silently creating an
