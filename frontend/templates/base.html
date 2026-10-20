@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ 'Reports' if view == 'items' else view|capitalize }} · Seekr</title>
+  <link rel="stylesheet" href="/static/styles.css?v=2">
+  <script src="/static/app.js?v=2" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="workspace">
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="/">Seekr</a>
+        <a class="button primary" href="{{ url(form='item') }}">Report an item</a>
+      </div>
+    </header>
+    <main id="main" class="page-wrap">
+      {% if api_error %}
+        <div class="error-banner" role="alert">{{ api_error }} <a href="">Try again</a></div>
+      {% elif view == 'items' %}
+        {% block browse %}{% endblock %}
+      {% else %}
+        {% include 'management.html' %}
+      {% endif %}
+    </main>
+  </div>
+  <footer class="site-footer">
+    <nav aria-label="Manage reports">
+      <a href="/">Items</a>
+      <a href="/?view=matches">Matches</a>
+      <a href="/?view=locations">Locations</a>
+    </nav>
+  </footer>
+  {% if notice %}<div id="toast" role="status" aria-live="polite">{{ notice }}</div>{% endif %}
+  {% include 'dialogs.html' %}
+</body>
+</html>

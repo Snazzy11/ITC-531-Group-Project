@@ -1,0 +1,16 @@
+<span class="badge">{{ 'Lost item' if item.type == 0 else 'Found item' }}</span>
+<h2 class="detail-title">{{ item.name }}</h2>
+<p class="detail-description">{{ item.description or 'No description added.' }}</p>
+<p class="detail-meta">Location: {{ location_names.get(item.location_id, 'Unknown location') }}</p>
+<p class="detail-meta">Status: {{ item.status }} · Posted {{ item.created_at[:10] }}</p>
+<div class="detail-actions">
+  {% if item.status != 'returned' %}
+    <a class="button primary" href="{{ url(item=item.id, form='item') }}">Edit report</a>
+  {% endif %}
+  {% if item.status == 'open' %}
+    <a class="button danger-text" href="{{ url(confirm='withdraw', record=item.id) }}">Withdraw report</a>
+  {% endif %}
+  {% for action, label in status_actions.get(item.status, []) %}
+    <a class="button" href="{{ url(confirm=action, record=item.id) }}">{{ label }}</a>
+  {% endfor %}
+</div>

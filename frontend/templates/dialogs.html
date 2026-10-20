@@ -1,0 +1,60 @@
+{% if dialog %}
+<dialog id="{{ dialog }}-dialog" class="dialog" open data-return-url="{{ return_to }}" aria-labelledby="dialog-title">
+  <div class="dialog-heading">
+    <h2 id="dialog-title">{{ dialog_title }}</h2>
+    <a class="close-button" href="{{ return_to }}" aria-label="Close dialog">×</a>
+  </div>
+
+  {% if dialog == 'detail' %}
+    {% include 'item_details.html' %}
+  {% else %}
+    <form id="{{ dialog }}-form" method="post" action="{{ form_action }}">
+      <input type="hidden" name="return_to" value="{{ return_to }}">
+      {% if dialog == 'item' %}
+        <label for="item-name">Item name
+          <input id="item-name" name="name" value="{{ values.get('name', '') }}" maxlength="100" placeholder="e.g. Green canvas backpack" required {% if 'name' in field_errors %}aria-invalid="true"{% endif %}>
+        </label>
+        <div class="form-columns">
+          {% if not item %}
+            <label for="item-type">Report type
+              <select id="item-type" name="type" required {% if 'type' in field_errors %}aria-invalid="true"{% endif %}>
+                <option value="0" {% if values.get('type', '0')|string == '0' %}selected{% endif %}>Lost</option>
+                <option value="1" {% if values.get('type')|string == '1' %}selected{% endif %}>Found</option>
+              </select>
+            </label>
+          {% endif %}
+          <label for="item-location">Location
+            <select id="item-location" name="location_id" required {% if 'location_id' in field_errors %}aria-invalid="true"{% endif %}>
+              <option value="">Choose a location</option>
+              {% for place in locations if place.is_active or (item and item.location_id == place.id) %}
+                <option value="{{ place.id }}" {% if values.get('location_id')|string == place.id|string %}selected{% endif %}>{{ place.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <label for="item-description">Description
+          <textarea id="item-description" name="description" maxlength="1000" rows="4" placeholder="Color, distinctive details, and where it was last seen" {% if 'description' in field_errors %}aria-invalid="true"{% endif %}>{{ values.get('description') or '' }}</textarea>
+        </label>
+      {% elif dialog == 'location' %}
+        <label for="location-name">Name
+          <input id="location-name" name="name" value="{{ values.get('name', '') }}" maxlength="100" required {% if 'name' in field_errors %}aria-invalid="true"{% endif %}>
+        </label>
+        <label for="location-coordinates">Coordinates
+          <input id="location-coordinates" name="coordinates" value="{{ values.get('coordinates', '') }}" maxlength="50" minlength="3" placeholder="e.g. 43.589, -84.775" required {% if 'coordinates' in field_errors %}aria-invalid="true"{% endif %}>
+        </label>
+        <label for="location-description">Description
+          <textarea id="location-description" name="description" maxlength="500" rows="3" {% if 'description' in field_errors %}aria-invalid="true"{% endif %}>{{ values.get('description') or '' }}</textarea>
+        </label>
+      {% elif dialog == 'confirm' %}
+        <p>{{ confirmation }}</p>
+      {% endif %}
+
+      {% include 'form_errors.html' %}
+      <div class="dialog-actions">
+        <a class="button" href="{{ return_to }}">Cancel</a>
+        <button class="button primary" type="submit">{{ 'Save report' if dialog == 'item' else 'Save location' if dialog == 'location' else 'Confirm' }}</button>
+      </div>
+    </form>
+  {% endif %}
+</dialog>
+{% endif %}

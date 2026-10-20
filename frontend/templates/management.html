@@ -1,0 +1,84 @@
+<div class="page-heading">
+  <div>
+    <h1>{{ 'Matches' if view == 'matches' else 'Locations' }}</h1>
+    <p>{{ 'Pair an open lost report with an open found report.' if view == 'matches' else 'Add or update the places used in campus reports.' }}</p>
+  </div>
+  {% if view == 'locations' %}
+    <a class="button primary" href="{{ url(form='location') }}">Add location</a>
+  {% endif %}
+</div>
+
+{% if view == 'matches' %}
+  <div class="management-grid">
+    <section class="panel">
+      <h2>Create a match</h2>
+      <form method="post" action="/forms/matches">
+        <input type="hidden" name="return_to" value="/?view=matches">
+        <label for="match-lost">Lost report
+          <select id="match-lost" name="lost_item_id" required {% if 'lost_item_id' in field_errors %}aria-invalid="true"{% endif %}>
+            <option value="">Choose an open report</option>
+            {% for item in all_items if item.type == 0 and item.status == 'open' %}
+              <option value="{{ item.id }}" {% if values.get('lost_item_id')|string == item.id|string %}selected{% endif %}>#{{ item.id }} · {{ item.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label for="match-found">Found report
+          <select id="match-found" name="found_item_id" required {% if 'found_item_id' in field_errors %}aria-invalid="true"{% endif %}>
+            <option value="">Choose an open report</option>
+            {% for item in all_items if item.type == 1 and item.status == 'open' %}
+              <option value="{{ item.id }}" {% if values.get('found_item_id')|string == item.id|string %}selected{% endif %}>#{{ item.id }} · {{ item.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% if not dialog %}{% include 'form_errors.html' %}{% endif %}
+        <button class="button primary" type="submit">Create match</button>
+      </form>
+    </section>
+    <section class="panel">
+      <h2>Recorded matches <span class="count-chip">{{ matches|length }}</span></h2>
+      {% for match in matches %}
+        <article class="match-row">
+          <span class="small-label">Match #{{ match.id }} · {{ match.created_at|date_label }}</span>
+          <dl>
+            <dt>Lost</dt>
+            <dd>{{ item_names.get(match.lost_item_id, 'Item #' ~ match.lost_item_id) }}</dd>
+            <dt>Found</dt>
+            <dd>{{ item_names.get(match.found_item_id, 'Item #' ~ match.found_item_id) }}</dd>
+          </dl>
+          <a class="button danger-text" href="{{ url(confirm='remove-match', record=match.id) }}">Remove match</a>
+        </article>
+      {% else %}
+        <div class="empty-state">
+          <h3>No matches recorded.</h3>
+          <p>Select two reports to create a match.</p>
+        </div>
+      {% endfor %}
+    </section>
+  </div>
+{% else %}
+  <div class="location-list">
+    {% for location in locations %}
+      <article class="location-record">
+        <div>
+          <h2>{{ location.name }}</h2>
+          <p>{{ location.description or 'No description provided.' }}</p>
+          <span class="small-label">{{ location.coordinates }} · {{ 'Active' if location.is_active else 'Retired' }}</span>
+        </div>
+        <div class="location-actions">
+          <a class="button" href="{{ url(form='location', location=location.id) }}">Edit</a>
+          {% if location.is_active %}
+            <a class="button danger-text" href="{{ url(confirm='retire', record=location.id) }}">Retire</a>
+          {% else %}
+            <a class="button" href="{{ url(confirm='restore', record=location.id) }}">Restore</a>
+          {% endif %}
+        </div>
+      </article>
+    {% else %}
+      <div class="empty-state">
+        <h3>No locations added.</h3>
+        <p>Add a location before posting a report.</p>
+        <a class="button primary" href="{{ url(form='location') }}">Add location</a>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
