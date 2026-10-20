@@ -10,6 +10,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 import crud
+import demo_data
 from database.database import Base, SessionLocal, engine
 from errors import register_error_handlers
 from fastapi import FastAPI, Request
@@ -24,6 +25,9 @@ async def lifespan(app: FastAPI):
     storage.ensure_bucket()
     with SessionLocal() as db:
         crud.seed_auth(db, os.getenv("ADMIN_DISPLAY_NAME"), os.getenv("ADMIN_PASSWORD"))
+        # Only fills a brand-new database; see demo_data.py
+        if demo_password := os.getenv("DEMO_USER_PASSWORD"):
+            demo_data.seed(db, demo_password)
     yield
 
 

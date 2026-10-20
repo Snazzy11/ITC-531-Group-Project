@@ -17,6 +17,7 @@ Copy `.env.local` and fill it in: `cp .env.local.example .env.local`
 | `BROKER_USER` & `BROKER_PASSWORD`      | Any username and password; compose creates that RabbitMQ user |
 | `JWT_SECRET`                           | Required. Signs login tokens. Generate one with `openssl rand -hex 32`. The app will not start without it |
 | `ADMIN_DISPLAY_NAME`, `ADMIN_PASSWORD` | Needed to use any admin route (managing locations, hard deletes, listing users). The app creates this admin account on startup. Display name up to 50 characters, password up to 72 bytes. See [Authentication](#authentication) |
+| `DEMO_USER_PASSWORD`                   | Optional. When set, a brand-new database is filled with demo data: users `alex-rivera`, `jordan-lee` and `sam-patel` (all sign in with this password), 3 locations, and 10 items, 2 of them matched. The list is in `app/demo_data.py`. 6 to 72 characters. Leave it empty to start with an empty database |
 
 Bring the container up and test it:
 ```sh
@@ -73,7 +74,7 @@ has a runnable command for every endpoint.
 
 With the stack running:
 
-- `scripts/api_tests.sh` is a curl walkthrough of the main flows. It signs in as the admin, so run it as `ADMIN_DISPLAY_NAME=... ADMIN_PASSWORD=... scripts/api_tests.sh` on a fresh stack.
+- `scripts/api_tests.sh` is a curl walkthrough of the main flows. It signs in as the admin, so run it as `ADMIN_DISPLAY_NAME=... ADMIN_PASSWORD=... scripts/api_tests.sh` on a fresh stack with `DEMO_USER_PASSWORD` empty (its ids assume no demo data).
 - `scripts/api_tester.py` checks every rule in the error contract. It wipes the
   database first.
   ```sh

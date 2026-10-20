@@ -9,6 +9,7 @@ os.environ["DATABASE_URL"] = "sqlite://"
 os.environ.setdefault("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long")
 os.environ["ADMIN_DISPLAY_NAME"] = "test-admin"
 os.environ["ADMIN_PASSWORD"] = "test-admin-passphrase"
+os.environ.pop("DEMO_USER_PASSWORD", None)  # tests start from an empty database
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
 

@@ -74,11 +74,13 @@ class User(Base):
 class Location(Base):
     __tablename__ = "locations"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False, unique=True)
-    coordinates = Column(String(50), nullable=False)
-    description = Column(String(500))
-    is_active = Column(Boolean, nullable=False, server_default=true())
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    coordinates: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500))
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=true()
+    )
 
     items: Mapped[list[Item]] = relationship(back_populates="location")
 
