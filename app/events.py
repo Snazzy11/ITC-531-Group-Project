@@ -16,7 +16,8 @@ class ItemPayload(Payload):
 class PotentialMatchPayload(Payload):
     lost_item_id: int = Field(gt=0, strict=True)
     found_item_id: int = Field(gt=0, strict=True)
-    score: float = Field(ge=0, le=1, allow_inf_nan=False)
+    # No upper limit: the matcher's score grows with the number of shared words.
+    score: float = Field(ge=0, allow_inf_nan=False)
 
 
 class ConfirmedMatchPayload(Payload):

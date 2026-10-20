@@ -97,6 +97,21 @@ class MatchResponse(BaseModel):
     created_at: datetime
 
 
+class PotentialMatchResponse(BaseModel):
+    model_config = RESPONSE
+
+    lost_item_id: int
+    found_item_id: int
+    # Higher is better. No upper limit: it grows with the number of shared words.
+    score: float
+    created_at: datetime
+
+
+class MatchSearchResponse(BaseModel):
+    item_id: int
+    status: Literal["queued"] = "queued"
+
+
 # locations
 
 

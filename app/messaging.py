@@ -202,3 +202,12 @@ def emit(event_type: str, item_id: int) -> None:
         publish_event(event_type, {"item_id": item_id})
     except Exception as exc:  # noqa: BLE001
         log.warning("could not publish %s for item %s: %s", event_type, item_id, exc)
+
+
+def queue_matching(item_id: int) -> None:
+    """Best-effort like emit(): a broker outage is logged and the change still
+    succeeds. An admin can re-run it with POST /items/{id}/match-search."""
+    try:
+        publish_matching_job(item_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not queue matching for item %s: %s", item_id, exc)

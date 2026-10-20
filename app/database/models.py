@@ -8,6 +8,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -259,4 +260,36 @@ class Match(Base):
     )
     found_item = relationship(
         "Item", foreign_keys=[found_item_id], back_populates="found_matches"
+    )
+
+
+class PotentialMatch(Base):
+    """A lost/found pair the matching worker scored. Users review these and
+    confirm the right one with POST /matches. Derived data, so deleting either
+    item deletes the suggestion."""
+
+    __tablename__ = "potential_matches"
+    __table_args__ = (
+        UniqueConstraint(
+            "lost_item_id", "found_item_id", name="uq_potential_matches_item_pair"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    lost_item_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    found_item_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Higher is better. No upper limit: it grows with the number of shared words.
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

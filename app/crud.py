@@ -12,8 +12,8 @@ import schemas
 from database import models
 from database.models import File, Location, Match, User
 from password_util import hash_password
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, or_, select
+from sqlalchemy.orm import Session, aliased
 
 # Transitions a client may ask for directly via PATCH /items/{id}/status.
 # Anything -> MATCHED and MATCHED -> OPEN are system-only: they happen when a
@@ -152,14 +152,72 @@ def list_matches(
     )
 
 
-def delete_match(db: Session, match: models.Match) -> None:
+def delete_match(db: Session, match: models.Match) -> list[models.Item]:
     """Unmatch. Both items go back to 'open', but only if they are still
-    'matched' - one already marked 'returned' stays returned."""
+    'matched' - one already marked 'returned' stays returned. Returns the
+    items it reopened."""
+    reopened = []
     for item in (match.lost_item, match.found_item):
         if item is not None and item.status == models.ItemStatus.MATCHED:
             item.status = models.ItemStatus.OPEN
+            reopened.append(item)
     db.delete(match)
     db.commit()
+    return reopened
+
+
+# potential matches
+
+
+def replace_potential_matches(
+    db: Session, item_id: int, rows: list[models.PotentialMatch]
+) -> list[models.PotentialMatch]:
+    """Swaps every suggestion involving the item for `rows` in one transaction.
+    Returns the rows that are new pairs, so a re-run doesn't announce the same
+    suggestion twice."""
+    involving = or_(
+        models.PotentialMatch.lost_item_id == item_id,
+        models.PotentialMatch.found_item_id == item_id,
+    )
+    before = {
+        (lost_id, found_id)
+        for lost_id, found_id in db.execute(
+            select(
+                models.PotentialMatch.lost_item_id, models.PotentialMatch.found_item_id
+            ).where(involving)
+        )
+    }
+    new = [row for row in rows if (row.lost_item_id, row.found_item_id) not in before]
+    db.execute(delete(models.PotentialMatch).where(involving))
+    db.add_all(rows)
+    db.commit()
+    return new
+
+
+def list_potential_matches(
+    db: Session, item_id: int, limit: int
+) -> list[models.PotentialMatch]:
+    """Best first. Pairs where either item is no longer open are left out,
+    since POST /matches would refuse them."""
+    lost = aliased(models.Item)
+    found = aliased(models.Item)
+    return list(
+        db.scalars(
+            select(models.PotentialMatch)
+            .join(lost, models.PotentialMatch.lost_item_id == lost.id)
+            .join(found, models.PotentialMatch.found_item_id == found.id)
+            .where(
+                or_(
+                    models.PotentialMatch.lost_item_id == item_id,
+                    models.PotentialMatch.found_item_id == item_id,
+                ),
+                lost.status == models.ItemStatus.OPEN,
+                found.status == models.ItemStatus.OPEN,
+            )
+            .order_by(models.PotentialMatch.score.desc(), models.PotentialMatch.id)
+            .limit(limit)
+        )
+    )
 
 
 # locations

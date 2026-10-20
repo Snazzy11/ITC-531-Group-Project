@@ -14,7 +14,6 @@
           "type": "integer"
         },
         "score": {
-          "maximum": 1,
           "minimum": 0,
           "title": "Score",
           "type": "number"

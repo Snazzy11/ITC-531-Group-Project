@@ -1,11 +1,14 @@
 import crud
 import errors
+import messaging
 import schemas
-from auth import login_required
+from auth import admin, login_required
 from database import models
 from database.database import get_db
 from errors import APIError
 from fastapi import APIRouter, Depends, Query, Response
+from matching.matcher import MAX_SUGGESTIONS
+from pika.exceptions import AMQPError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -112,5 +115,50 @@ def delete_match(match_id: int, db: Session = Depends(get_db)):
     match = crud.get_match(db, match_id)
     if match is None:
         raise APIError(404, errors.MATCH_NOT_FOUND, "match not found")
-    crud.delete_match(db, match)
+    for item in crud.delete_match(db, match):
+        messaging.queue_matching(item.id)
     return Response(status_code=204)
+
+
+@router.get(
+    "/items/{item_id}/potential-matches",
+    response_model=list[schemas.PotentialMatchResponse],
+    responses=errors.errors(404),
+)
+def potential_matches_by_item(item_id: int, db: Session = Depends(get_db)):
+    """Suggestions from the matching worker, best first. Pairs where either item
+    is no longer open are left out. Confirm the right one with POST /matches."""
+    if crud.get_item(db, item_id) is None:
+        raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
+    return crud.list_potential_matches(db, item_id, limit=MAX_SUGGESTIONS)
+
+
+@router.post(
+    "/items/{item_id}/match-search",
+    response_model=schemas.MatchSearchResponse,
+    status_code=202,
+    dependencies=[admin],
+    responses=errors.errors(401, 403, 404, 409, 503),
+)
+def queue_match_search(item_id: int, db: Session = Depends(get_db)):
+    """Queues a fresh matching run for one item; the worker then replaces its
+    suggestions. Unlike posting an item, this fails if the job can't be queued,
+    so the admin knows to try again."""
+    item = crud.get_item(db, item_id)
+    if item is None:
+        raise APIError(404, errors.ITEM_NOT_FOUND, "item not found")
+    if item.status is not models.ItemStatus.OPEN:
+        raise APIError(
+            409,
+            errors.ITEM_NOT_OPEN,
+            f"item {item.id} is {item.status.value} and cannot be matched",
+        )
+    try:
+        messaging.publish_matching_job(item.id)
+    except AMQPError:
+        raise APIError(
+            503,
+            errors.SERVICE_UNAVAILABLE,
+            "the matching queue is unavailable, please try again",
+        ) from None
+    return schemas.MatchSearchResponse(item_id=item.id)

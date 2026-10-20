@@ -1,5 +1,6 @@
 """Demo data for an empty database: three users, three locations, and ten
-items, two of which (a lost and a found water bottle) are matched.
+items, two of which (a lost and a found water bottle) are matched. One matching
+job is queued, for the lost black backpack.
 
 The app runs this at startup when DEMO_USER_PASSWORD is set, and every demo
 user signs in with that password. The admin still comes from
@@ -11,6 +12,7 @@ import logging
 from typing import Final, Literal
 
 import crud
+import messaging
 import schemas
 from database import models
 from sqlalchemy import select
@@ -157,6 +159,10 @@ def seed(db: Session, password: str) -> bool:
     ]
     lost, found = (items[i] for i in MATCHED_PAIR)
     crud.create_match(db, lost, found)
+    # One matching job, so a fresh start has suggestions to show: the lost
+    # backpack has a look-alike found backpack. The rest can be run on demand
+    # with POST /items/{id}/match-search.
+    messaging.queue_matching(items[0].id)
 
     log.info(
         "seeded demo data: %d users, %d locations, %d items, 1 match",

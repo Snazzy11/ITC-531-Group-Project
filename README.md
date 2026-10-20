@@ -17,7 +17,7 @@ Copy `.env.local` and fill it in: `cp .env.local.example .env.local`
 | `BROKER_USER` & `BROKER_PASSWORD`      | Any username and password; compose creates that RabbitMQ user |
 | `JWT_SECRET`                           | Required. Signs login tokens. Generate one with `openssl rand -hex 32`. The app will not start without it |
 | `ADMIN_DISPLAY_NAME`, `ADMIN_PASSWORD` | Needed to use any admin route (managing locations, hard deletes, listing users). The app creates this admin account on startup. Display name up to 50 characters, password up to 72 bytes. See [Authentication](#authentication) |
-| `DEMO_USER_PASSWORD`                   | Optional. When set, a brand-new database is filled with demo data: users `alex-rivera`, `jordan-lee` and `sam-patel` (all sign in with this password), 3 locations, and 10 items, 2 of them matched. The list is in `app/demo_data.py`. 6 to 72 characters. Leave it empty to start with an empty database |
+| `DEMO_USER_PASSWORD`                   | Optional. When set, a brand-new database is filled with demo data: users `alex-rivera`, `jordan-lee` and `sam-patel` (all sign in with this password), 3 locations, and 10 items, 2 of them matched, plus one matching job for the lost backpack. The list is in `app/demo_data.py`. 6 to 72 characters. Leave it empty to start with an empty database |
 
 Bring the container up and test it:
 ```sh
@@ -126,7 +126,7 @@ If it cannot log in from there, get a token with the curl above and paste it in.
 | Anyone | `GET /health`, `POST /users`, `POST /auth/login`, every `GET` on items, locations, matches and item photo status |
 | Any signed-in user | `POST /items`, `POST /matches`, `DELETE /matches/{id}`, `GET /auth/me`, `POST /files`, `POST /files/batch`, `GET /files` (lists only your own files) |
 | The owner of the item or file, or an admin | `PATCH /items/{id}`, `PATCH /items/{id}/status`, `DELETE /items/{id}`, `POST /items/{id}/images` and `.../complete`, `GET /files/{id}`, `GET /files/{id}/content`, `DELETE /files/{id}` |
-| Admins only | `POST`, `PATCH` and `DELETE` on `/locations` (including restore and hard delete), `DELETE /items/{id}/hard`, `GET /users`, and the `user_id` filter on `GET /files` |
+| Admins only | `POST`, `PATCH` and `DELETE` on `/locations` (including restore and hard delete), `DELETE /items/{id}/hard`, `POST /items/{id}/match-search`, `GET /users`, and the `user_id` filter on `GET /files` |
 
 Item posters and file owners come from the token. `POST /items` and the file
 uploads no longer take a `user_id`.
@@ -187,7 +187,7 @@ owner 403, owner 200, admin 200), the admin-only `GET /users` (403 then 200), an
 | `GET /health`, gateway `/healthz` | Health probes and the compose healthcheck carry no token. They return only `{"status":"ok"}`, or 503 when the database is down, and no data |
 | `POST /users` | Registration has to be open to anyone. It can only ever create an account with the plain `user` role (a `roles` or `is_admin` field is a 422), and the password is hashed before it is stored |
 | `POST /auth/login` | It is how you get a token. It answers the same message and takes the same time for an unknown name and a wrong password. Known gap: there is no rate limit or lockout |
-| `GET /items`, `GET /items/{id}`, `GET /items/{id}/matches`, `GET /matches`, `GET /matches/{id}` | Browsing lost and found posts is the whole point of the app. A post holds a name, description, location and the poster's numeric id, and no contact details or other personal data. Anything that changes them needs a token |
+| `GET /items`, `GET /items/{id}`, `GET /items/{id}/matches`, `GET /items/{id}/potential-matches`, `GET /matches`, `GET /matches/{id}` | Browsing lost and found posts is the whole point of the app. A post holds a name, description, location and the poster's numeric id, and no contact details or other personal data. Anything that changes them needs a token |
 | `GET /locations`, `GET /locations/{id}`, `GET /locations/{id}/items` | Campus building names, which are public reference data. Only admins can change them |
 | `GET /items/{id}/images/{upload_id}` | Shows the processing status of a photo that is already visible on the public item. The `upload_id` is a random uuid, and the photo URLs it returns are time-limited presigned links |
 | `/docs`, `/redoc`, `/openapi.json` | They describe the API and contain no data. In a real deployment we would turn them off |

@@ -34,8 +34,11 @@ services:
       BROKER_HOST: broker
       BROKER_USER: ${BROKER_USER:?set BROKER_USER in .env.local}
       BROKER_PASSWORD: ${BROKER_PASSWORD:?set BROKER_PASSWORD in .env.local}
+      DATABASE_URL: "postgresql+psycopg2://seekr:seekr-devonly@db:5432/seekr"
     depends_on:
       broker:
+        condition: service_healthy
+      db:
         condition: service_healthy
 
   image_worker:

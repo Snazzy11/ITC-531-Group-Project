@@ -1,11 +1,18 @@
 import json
 import logging
 
-from messaging import MATCHING_QUEUE, connect
+import crud
+from database.database import SessionLocal
+from database.models import Item, ItemStatus, ItemType, PotentialMatch
+from matching import matcher
+from matching.match_score import MatchScore
+from messaging import MATCHING_QUEUE, connect, publish_event
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logging.getLogger("pika").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
+
+SOURCE = "matching-worker"
 
 
 def handle_message(channel, method, properties, body):
@@ -21,8 +28,46 @@ def handle_message(channel, method, properties, body):
         channel.basic_reject(delivery_tag=method.delivery_tag, requeue=False)
         return
 
-    log.info("Received item %s matching is not implemented yet", item_id)
+    process(item_id)
     channel.basic_ack(delivery_tag=method.delivery_tag)
+
+
+def process(item_id: int) -> None:
+    """Safe to run twice for the same item: it replaces the item's suggestions,
+    and only pairs it had not suggested before are announced."""
+    with SessionLocal() as db:
+        item = crud.get_item(db, item_id)
+        if item is None or item.status is not ItemStatus.OPEN:
+            log.info("Item %s is gone or not open; nothing to match", item_id)
+            return
+
+        rows = [to_row(item, score) for score in matcher.get_potential_matches(db, item_id)]
+        new = crud.replace_potential_matches(db, item_id, rows)
+        payloads = [
+            {"lost_item_id": r.lost_item_id, "found_item_id": r.found_item_id, "score": r.score}
+            for r in new
+        ]
+
+    for payload in payloads:
+        announce(payload)
+    log.info("Item %s: %d suggestions, %d new", item_id, len(rows), len(payloads))
+
+
+def to_row(item: Item, score: MatchScore) -> PotentialMatch:
+    if item.type == ItemType.LOST:
+        lost_id, found_id = item.id, score.candidate_item_id
+    else:
+        lost_id, found_id = score.candidate_item_id, item.id
+    return PotentialMatch(lost_item_id=lost_id, found_item_id=found_id, score=score.score)
+
+
+def announce(payload: dict) -> None:
+    """Best-effort, like the API's events: the suggestion is already saved, so a
+    broker hiccup only costs the notification."""
+    try:
+        publish_event("match.potential_found", payload, source=SOURCE)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not announce potential match %s: %s", payload, exc)
 
 
 def main():

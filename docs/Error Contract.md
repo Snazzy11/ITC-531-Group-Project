@@ -69,7 +69,7 @@ is not.
 | 400 | `UNSUPPORTED_FILE_TYPE` | A `/files` upload whose bytes are not JPEG, PNG, WebP, HEIC or PDF, whatever the client claimed |
 | 404 | `ITEM_NOT_FOUND` / `MATCH_NOT_FOUND` / `LOCATION_NOT_FOUND` / `IMAGE_NOT_FOUND` / `USER_NOT_FOUND` / `FILE_NOT_FOUND` | Referenced row missing |
 | 405 | `METHOD_NOT_ALLOWED` | Wrong verb on a real path |
-| 409 | `ITEM_NOT_OPEN` | Matching an item that is not `open` |
+| 409 | `ITEM_NOT_OPEN` | Matching an item that is not `open`, or queueing a match search for one |
 | 409 | `ITEM_HAS_MATCHES` | Hard-deleting an item that is in a match |
 | 409 | `ITEM_CLOSED` | Editing, or adding a photo to, a `returned` post |
 | 409 | `INVALID_STATUS_TRANSITION` | e.g. `open` → `returned` |
@@ -86,14 +86,14 @@ is not.
 | 422 | `MATCH_SELF` | `lost_item_id == found_item_id` |
 | 422 | `EMPTY_UPDATE` | PATCH body changes nothing |
 | 500 | `INTERNAL_ERROR` | Anything unexpected; fixed generic message |
-| 503 | `SERVICE_UNAVAILABLE` | `OperationalError` / `InterfaceError` from psycopg |
+| 503 | `SERVICE_UNAVAILABLE` | `OperationalError` / `InterfaceError` from psycopg, or the broker refusing a `POST /items/{id}/match-search` job |
 | 503 | `STORAGE_UNAVAILABLE` | Any error from the object store (botocore) |
 
 ## Success codes
 
 - **200** - retrieved or updated.
 - **201** - created; body is the new resource.
-- **202** - accepted for background processing (`.../images/{upload_id}/complete`).
+- **202** - accepted for background processing (`.../images/{upload_id}/complete`, `POST /items/{id}/match-search`).
 - **204** - withdrawn, unmatched, or retired; no body. `DELETE /items/{id}` is
   idempotent, so withdrawing an already-withdrawn item is still a 204.
 

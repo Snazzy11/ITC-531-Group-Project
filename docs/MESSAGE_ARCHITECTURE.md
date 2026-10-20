@@ -3,8 +3,9 @@
 ## How it works
 
 Requests go through the gateway to the API. RabbitMQ holds messages until a
-worker picks them up. The API publishes image jobs and item events; nothing
-publishes matching jobs or match events yet.
+worker picks them up. The API publishes image jobs, matching jobs and item
+events. The matching worker publishes `match.potential_found`; nothing publishes
+`match.confirmed` yet.
 
 ```text
 Client -> gateway (localhost:8000) -> API (internal port 8000)
@@ -25,12 +26,16 @@ RabbitMQ stores its data in the brokerdata volume.
 
 Each job goes through the default exchange. Its routing key is the queue name.
 
-- `publish_matching_job` sends `{"item_id": 42}` to `jobs.item_matcher`, which is both the queue name and routing key. `matching_worker` reads from this queue.
+- `publish_matching_job` sends `{"item_id": 42}` to `jobs.item_matcher`, which is both the queue name and routing key. `matching_worker` reads from this queue. The API sends it when an item is posted (`POST /items`) or goes back to `open` (`PATCH /items/{item_id}/status`, or an unmatch with `DELETE /matches/{match_id}`), and once for a demo item when demo data is seeded. Those are best-effort like events: if the broker is down the API logs a warning and the request still succeeds. Admins can queue one by hand with `POST /items/{item_id}/match-search`, which returns 202, or 503 if the job could not be queued.
 - `publish_image_job` sends `{"item_id": 42, "image_ref": "<upload_id>"}` to `jobs.image_processor`, which is both the queue name and routing key. The API sends it from `POST /items/{item_id}/images/{upload_id}/complete`. `image_worker` reads from this queue.
 
 Both workers check the message and acknowledge it when they are done. An
-acknowledgment tells RabbitMQ it can remove the message. `matching_worker` only
-logs the job; matching is not implemented yet. `image_worker` checks and
+acknowledgment tells RabbitMQ it can remove the message. `matching_worker` scores
+the item against every `open` item of the other type (lost against found), keeps
+the 5 best in the `potential_matches` table in place of the item's earlier
+suggestions, and publishes `match.potential_found` for each pair it had not
+suggested before. An item that is gone or no longer `open` is skipped. Users see
+the suggestions with `GET /items/{item_id}/potential-matches`. `image_worker` checks and
 re-encodes the upload and records the result in Postgres (see
 `milestones/milestone4/STORAGE_DESIGN.md`). A rejected upload is still acknowledged, since retrying it
 would give the same result.
@@ -62,7 +67,8 @@ The API publishes `item.created`, `item.updated`, and `item.withdrawn` after the
 change is saved. This is best-effort: if the broker is down, the API logs a
 warning and the request still succeeds, so an event can be lost.
 
-All payload IDs must be positive integers. The score must be between 0 and 1.
+All payload IDs must be positive integers. The score cannot be negative and has
+no upper limit; higher means more words in common.
 The source cannot be blank, and extra fields are rejected. The models are in
 `app/events.py`. Each event also has a version 1 JSON schema in `events/`.
 

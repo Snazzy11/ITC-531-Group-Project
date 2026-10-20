@@ -1,10 +1,34 @@
 import heapq
+import string
 from itertools import count
 
 from database import models
 from sqlalchemy.orm import Session
 
 from matching.match_score import MatchScore
+
+# How many suggestions each item keeps
+MAX_SUGGESTIONS = 5
+
+# Words that say nothing about the item itself, so sharing them is not a sign of
+# a match. "lost" and "found" are here because nearly every description has one.
+COMMON_WORDS = frozenset(
+    {
+        "a", "an", "the", "and", "or", "but", "nor", "so",
+        "about", "above", "after", "around", "at", "before", "behind", "below",
+        "beside", "between", "by", "during", "for", "from", "in", "inside",
+        "into", "near", "next", "of", "off", "on", "onto", "out", "outside",
+        "over", "through", "to", "under", "up", "with", "without",
+        "i", "me", "my", "mine", "we", "us", "our", "you", "your", "he", "him",
+        "his", "she", "her", "it", "its", "they", "them", "their", "this",
+        "that", "these", "those", "some", "any", "all", "each", "one",
+        "am", "is", "are", "was", "were", "be", "been", "being", "has", "have",
+        "had", "do", "does", "did", "could", "will", "would", "should", "may",
+        "might", "as", "if", "then", "than", "there", "here", "where", "when",
+        "also", "just", "very", "not", "no", "maybe", "probably", "somewhere",
+        "lost", "found",
+    }
+)
 
 
 class ItemMatcher:
@@ -43,9 +67,16 @@ class ItemMatcher:
     def __len__(self):
         return len(self._heap)
 
+def words(text: str) -> list[str]:
+    """Lowercase words with surrounding punctuation stripped ("zipper," ->
+    "zipper") and COMMON_WORDS left out."""
+    stripped = (w.strip(string.punctuation) for w in text.lower().split())
+    return [w for w in stripped if w and w not in COMMON_WORDS]
+
+
 def calculate_match_score(item: models.Item, candidate: models.Item) -> MatchScore:
-    item_words = item.description.lower().strip().split()
-    candidate_words = candidate.description.lower().strip().split()
+    item_words = words(item.description)
+    candidate_words = set(words(candidate.description))
 
     already_matched_words: set[str] = set()
 
@@ -60,25 +91,38 @@ def calculate_match_score(item: models.Item, candidate: models.Item) -> MatchSco
     return MatchScore(score=score, item_id=item.id, candidate_item_id=candidate.id)
 
 
-async def get_potential_matches(db: Session, item_id: int, max_size: int = 10) -> list[MatchScore]:
+def get_potential_matches(db: Session, item_id: int, max_size: int = MAX_SUGGESTIONS) -> list[MatchScore]:
+    """Best first. Only open items of the other type are candidates, since
+    those are the only pairs POST /matches accepts, and pairs with no words in
+    common are left out."""
     item: models.Item | None = (
         db.query(models.Item)
         .filter(models.Item.id == item_id)
         .first()
     )
 
-    if item is None:
+    if item is None or item.status is not models.ItemStatus.OPEN:
         return []
+
+    other_type = (
+        models.ItemType.FOUND if item.type == models.ItemType.LOST else models.ItemType.LOST
+    )
 
     matcher = ItemMatcher(max_size)
 
     candidates = (
-        db.query(models.Item).filter(models.Item.id != item_id)
+        db.query(models.Item)
+        .filter(
+            models.Item.id != item_id,
+            models.Item.type == other_type,
+            models.Item.status == models.ItemStatus.OPEN,
+        )
         .yield_per(100)
     )
 
     for candidate in candidates:
         match_score = calculate_match_score(item, candidate)
-        matcher.add(match_score)
+        if match_score.score > 0:
+            matcher.add(match_score)
 
     return matcher.get_sorted()
