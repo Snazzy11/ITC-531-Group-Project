@@ -2,8 +2,6 @@ import heapq
 from itertools import count
 
 from database import models
-from database.database import get_db
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from matching.match_score import MatchScore
@@ -46,10 +44,11 @@ class ItemMatcher:
         return len(self._heap)
 
 def calculate_match_score(item: models.Item, candidate: models.Item) -> MatchScore:
-    item_words = item.description.lower().strip().split()
-    candidate_words = candidate.description.lower().strip().split()
+    # description is nullable, so treat a missing one as having no words
+    item_words = (item.description or "").lower().strip().split()
+    candidate_words = (candidate.description or "").lower().strip().split()
 
-    already_matched_words = [str]
+    already_matched_words: set[str] = set()
 
     score = 0.0
     for w in item_words:
@@ -58,16 +57,11 @@ def calculate_match_score(item: models.Item, candidate: models.Item) -> MatchSco
                 score += 0.1
             else:
                 score += 0.25
-                already_matched_words.append(w)
+                already_matched_words.add(w)
     return MatchScore(score=score, item_id=item.id, candidate_item_id=candidate.id)
 
 
-async def get_potential_matches(item_id: int, max_size: int = 10) -> list[MatchScore]:
-    try:
-        db: Session = get_db()
-    except OperationalError:
-        raise ConnectionError()
-
+async def get_potential_matches(db: Session, item_id: int, max_size: int = 10) -> list[MatchScore]:
     item: models.Item | None = (
         db.query(models.Item)
         .filter(models.Item.id == item_id)

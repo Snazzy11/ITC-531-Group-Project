@@ -1,5 +1,6 @@
 import enum
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
@@ -86,11 +87,11 @@ class Item(Base):
     __tablename__ = "items"
     __table_args__ = (CheckConstraint("type IN (0, 1)", name="ck_items_type"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    description = Column(String(1000))
-    type = Column(Integer, nullable=False, index=True)
-    status = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1000))
+    type: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    status: Mapped[ItemStatus] = mapped_column(
         Enum(
             ItemStatus,
             name="item_status",
@@ -104,19 +105,19 @@ class Item(Base):
         server_default=ItemStatus.OPEN.value,
         index=True,
     )
-    location_id = Column(
+    location_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("locations.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
-    user_id = Column(
+    user_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     location = relationship("Location", back_populates="items")
