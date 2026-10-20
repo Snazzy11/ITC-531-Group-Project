@@ -24,10 +24,6 @@ login() {
 echo "== health through the gateway"
 curl -fsS "$API/health" | jq -e '.status == "ok"' >/dev/null || fail "/health is not ok"
 
-echo "== no service has exited"
-exited=$("${COMPOSE[@]}" ps --all --status exited --format '{{.Service}}')
-[ -z "$exited" ] || fail "exited: $exited"
-
 echo "== an item posted through the API reaches $EVENTS"
 : "${ADMIN_DISPLAY_NAME:?set ADMIN_DISPLAY_NAME}" "${ADMIN_PASSWORD:?set ADMIN_PASSWORD}"
 ADMIN="Authorization: Bearer $(login "$ADMIN_DISPLAY_NAME" "$ADMIN_PASSWORD")"
@@ -42,14 +38,21 @@ ITEM=$(curl -fsS -X POST "$API/items" -H "$JSON" -H "$USER" \
   -d "{\"name\":\"Smoke test item\",\"description\":\"Posted by scripts/smoke_test.sh to check that events reach the log file\",\"type\":0,\"location_id\":$LOCATION}" \
   | jq -r .id)
 
+logged=""
 for _ in $(seq 30); do
   if "${COMPOSE[@]}" exec -T logger cat "$EVENTS" 2>/dev/null \
     | jq -e --argjson id "$ITEM" 'select(.routing_key == "item.created" and .event.payload.item_id == $id)' >/dev/null; then
-    echo "item.created for item $ITEM is in $EVENTS. Latest lines:"
-    "${COMPOSE[@]}" exec -T logger tail -n 3 "$EVENTS"
-    echo "PASS"
-    exit 0
+    logged=yes
+    break
   fi
   sleep 1
 done
-fail "no item.created event for item $ITEM in $EVENTS after 30s"
+[ -n "$logged" ] || fail "no item.created event for item $ITEM in $EVENTS after 30s"
+echo "item.created for item $ITEM is in $EVENTS. Latest lines:"
+"${COMPOSE[@]}" exec -T logger tail -n 3 "$EVENTS"
+
+# Last, so a worker that crashes a few seconds after starting is caught too.
+echo "== no service has exited"
+exited=$("${COMPOSE[@]}" ps --all --status exited --format '{{.Service}}')
+[ -z "$exited" ] || fail "exited: $exited"
+echo "PASS"

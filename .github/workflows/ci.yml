@@ -69,10 +69,15 @@ jobs:
           ADMIN_DISPLAY_NAME=ci-admin
           ADMIN_PASSWORD=$(openssl rand -hex 16)
           EOF
+      # The workers have `healthcheck: disable: true` (they share the API's
+      # image, whose HEALTHCHECK calls the API). The runner's compose fails
+      # `--wait` on those ("has no healthcheck configured"), so only the API,
+      # the gateway and their dependencies are waited on. smoke_test.sh then
+      # checks that no worker has exited.
       - name: Start the stack
-        run: >-
-          docker compose --env-file .env.local up -d --build --wait --wait-timeout 180
-          gateway app matching_worker image_worker logger notifier
+        run: |
+          docker compose --env-file .env.local up -d --build --wait --wait-timeout 180 gateway app
+          docker compose --env-file .env.local up -d --build matching_worker image_worker logger notifier
       - name: Smoke test
         run: |
           set -a; . ./.env.local; set +a

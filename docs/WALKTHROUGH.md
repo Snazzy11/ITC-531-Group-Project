@@ -393,6 +393,10 @@ docker compose --env-file .env.local down --volumes  # deletes it all
 
 ## If something doesn't match
 
+- **`up --wait` fails with `container campus-seekr-notifier-1 has no healthcheck configured`:** older Docker Compose
+  versions refuse `--wait` for the workers, whose health check is turned off. Start the stack in two steps instead:
+  `docker compose --env-file .env.local up -d --build --wait gateway app`, then
+  `docker compose --env-file .env.local up -d --build`.
 - **curl returns `{"error":{"code":"SERVICE_UNAVAILABLE",...}}`:** the gateway couldn't reach the API. Run
   `docker compose --env-file .env.local ps`. If `app` is `healthy`, recreate the gateway:
   `docker compose --env-file .env.local up -d --force-recreate gateway`.
