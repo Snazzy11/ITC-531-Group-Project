@@ -85,11 +85,16 @@ class Location(Base):
 
 class Item(Base):
     __tablename__ = "items"
-    __table_args__ = (CheckConstraint("type IN (0, 1)", name="ck_items_type"),)
+    __table_args__ = (
+        CheckConstraint("type IN (0, 1)", name="ck_items_type"),
+        CheckConstraint(
+            "length(description) >= 50", name="ck_items_description_min_length"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    description: Mapped[str | None] = mapped_column(String(1000))
+    description: Mapped[str] = mapped_column(String(1000), nullable=False)
     type: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     status: Mapped[ItemStatus] = mapped_column(
         Enum(

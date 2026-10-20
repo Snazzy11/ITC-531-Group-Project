@@ -60,9 +60,10 @@ curl -X POST $API/users -H 'Content-Type: application/json' \
 USER="Authorization: Bearer $(login tester1 secret123)"
 curl $API/auth/me -H "$USER"       # shows who the token belongs to
 
-# 3. Post an item. The poster is whoever the token belongs to; do not send a user_id
+# 3. Post an item. The poster is whoever the token belongs to; do not send a user_id.
+#    description is required, 50 to 1000 characters
 curl -X POST $API/items -H "$USER" -H 'Content-Type: application/json' \
-  -d '{"name":"Blue umbrella","type":1,"location_id":1}'   # type: 0 = lost, 1 = found
+  -d '{"name":"Blue umbrella","description":"Black compact umbrella with a wooden handle, left in the library lobby","type":1,"location_id":1}'   # type: 0 = lost, 1 = found
 ```
 
 To add a photo or upload a file, see `milestones/milestone4/README.md`, which

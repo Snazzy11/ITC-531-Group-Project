@@ -44,9 +44,8 @@ class ItemMatcher:
         return len(self._heap)
 
 def calculate_match_score(item: models.Item, candidate: models.Item) -> MatchScore:
-    # description is nullable, so treat a missing one as having no words
-    item_words = (item.description or "").lower().strip().split()
-    candidate_words = (candidate.description or "").lower().strip().split()
+    item_words = item.description.lower().strip().split()
+    candidate_words = candidate.description.lower().strip().split()
 
     already_matched_words: set[str] = set()
 

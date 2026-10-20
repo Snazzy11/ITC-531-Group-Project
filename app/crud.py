@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 import schemas
 from database import models
-from database.models import File, Item, Location, Match, User
+from database.models import File, Location, Match, User
 from password_util import hash_password
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -47,7 +47,7 @@ def create_item(db: Session, item: schemas.ItemCreate, user_id: int) -> models.I
     return row
 
 
-def get_item(db: Session, item_id: int) -> type[Item] | None:
+def get_item(db: Session, item_id: int) -> models.Item | None:
     return db.query(models.Item).filter(models.Item.id == item_id).first()
 
 
@@ -60,7 +60,7 @@ def list_items(
     include_withdrawn: bool = False,
     limit: int = 20,
     offset: int = 0,
-) -> list[type[Item]]:
+) -> list[models.Item]:
     query = db.query(models.Item)
 
     if type is not None:

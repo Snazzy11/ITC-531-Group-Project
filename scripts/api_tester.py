@@ -97,15 +97,19 @@ if "password" in show("list users as admin", c.get("/users", headers=A), 200).te
     failures.append("list users: response includes the password hash")
 show("create loc as user", c.post("/locations", json={"name": "X", "coordinates": "1,2"}, headers=U), 403)
 show("create loc old header", c.post("/locations", json={"name": "X", "coordinates": "1,2"}, headers={"X-Admin-Token": "dev-admin-token"}), 401)
-show("item no auth", c.post("/items", json={"name": "Keys", "type": 0, "location_id": loc}), 401)
-show("item client user_id", c.post("/items", json={"name": "Keys", "type": 0, "location_id": loc, "user_id": uid}, headers=U), 422)
+# Item descriptions must be 50 to 1000 characters; this one is valid
+DESC = "Silver house key on a plain ring, lost somewhere on the campus quad"
+show("item no auth", c.post("/items", json={"name": "Keys", "description": DESC, "type": 0, "location_id": loc}), 401)
+show("item client user_id", c.post("/items", json={"name": "Keys", "description": DESC, "type": 0, "location_id": loc, "user_id": uid}, headers=U), 422)
 
-show("item bad type", c.post("/items", json={"name": "Keys", "type": 5, "location_id": loc}, headers=U), 422)
-show("item extra field", c.post("/items", json={"name": "Keys", "type": 0, "location_id": loc, "status": "open"}, headers=U), 422)
-show("item unknown loc", c.post("/items", json={"name": "Keys", "type": 0, "location_id": 9999}, headers=U), 404)
-lost = show("create lost item", c.post("/items", json={"name": "Blue keys", "description": "carabiner", "type": 0, "location_id": loc}, headers=U), 201).json()["id"]
-found = show("create found item", c.post("/items", json={"name": "Keyring", "type": 1, "location_id": loc}, headers=U), 201).json()["id"]
-found2 = c.post("/items", json={"name": "Wallet", "type": 1, "location_id": loc}, headers=U).json()["id"]
+show("item bad type", c.post("/items", json={"name": "Keys", "description": DESC, "type": 5, "location_id": loc}, headers=U), 422)
+show("item extra field", c.post("/items", json={"name": "Keys", "description": DESC, "type": 0, "location_id": loc, "status": "open"}, headers=U), 422)
+show("item unknown loc", c.post("/items", json={"name": "Keys", "description": DESC, "type": 0, "location_id": 9999}, headers=U), 404)
+show("item no description", c.post("/items", json={"name": "Keys", "type": 0, "location_id": loc}, headers=U), 422)
+show("item short description", c.post("/items", json={"name": "Keys", "description": "carabiner", "type": 0, "location_id": loc}, headers=U), 422)
+lost = show("create lost item", c.post("/items", json={"name": "Blue keys", "description": "Three brass keys on a blue carabiner, lost near the library entrance", "type": 0, "location_id": loc}, headers=U), 201).json()["id"]
+found = show("create found item", c.post("/items", json={"name": "Keyring", "description": "Keyring with a blue carabiner, found by the vending machines in the union", "type": 1, "location_id": loc}, headers=U), 201).json()["id"]
+found2 = c.post("/items", json={"name": "Wallet", "description": "Brown leather wallet with a student ID, found in the second floor lounge", "type": 1, "location_id": loc}, headers=U).json()["id"]
 
 show("list items", c.get("/items?limit=2"), 200)
 show("filter type+q", c.get("/items?q=keys&type=0"), 200)
@@ -134,9 +138,11 @@ show("withdraw", c.delete(f"/items/{found}", headers=U), 204)
 show("withdraw is idempotent", c.delete(f"/items/{found}", headers=U), 204)
 show("withdrawn hidden", c.get("/items?q=Keyring"), 200)
 show("empty patch", c.patch(f"/items/{found2}", json={}, headers=U), 422)
-show("patch item", c.patch(f"/items/{found2}", json={"description": "brown leather"}, headers=U), 200)
+show("patch item", c.patch(f"/items/{found2}", json={"description": "Brown leather bifold wallet, found under a table in the second floor lounge"}, headers=U), 200)
+show("patch short description", c.patch(f"/items/{found2}", json={"description": "brown leather"}, headers=U), 422)
+show("patch null description", c.patch(f"/items/{found2}", json={"description": None}, headers=U), 422)
 show("retire loc", c.delete(f"/locations/{loc2}", headers=A), 204)
-show("post to retired loc", c.post("/items", json={"name": "Hat", "type": 1, "location_id": loc2}, headers=U), 409)
+show("post to retired loc", c.post("/items", json={"name": "Hat", "description": "Black knit winter hat, found on a bench outside the engineering building", "type": 1, "location_id": loc2}, headers=U), 409)
 show("items by location", c.get(f"/locations/{loc}/items"), 200)
 show("hard delete loc in use", c.delete(f"/locations/{loc}/hard", headers=A), 409)
 show("hard delete empty loc", c.delete(f"/locations/{loc2}/hard", headers=A), 204)
