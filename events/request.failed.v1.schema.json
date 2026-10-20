@@ -1,0 +1,96 @@
+{
+  "$defs": {
+    "RequestFailedPayload": {
+      "additionalProperties": false,
+      "description": "Enough to find the full error in the API's console log, and nothing\nmore: the exception message can carry SQL or bucket details.",
+      "properties": {
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Request Id"
+        },
+        "method": {
+          "minLength": 1,
+          "title": "Method",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "status": {
+          "maximum": 599,
+          "minimum": 500,
+          "title": "Status",
+          "type": "integer"
+        },
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "error_type": {
+          "minLength": 1,
+          "title": "Error Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "method",
+        "path",
+        "status",
+        "code",
+        "error_type"
+      ],
+      "title": "RequestFailedPayload",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "source": {
+      "minLength": 1,
+      "title": "Source",
+      "type": "string"
+    },
+    "event_type": {
+      "const": "request.failed",
+      "default": "request.failed",
+      "title": "Event Type",
+      "type": "string"
+    },
+    "payload": {
+      "$ref": "#/$defs/RequestFailedPayload"
+    }
+  },
+  "required": [
+    "source",
+    "payload"
+  ],
+  "title": "RequestFailedEvent",
+  "type": "object"
+}

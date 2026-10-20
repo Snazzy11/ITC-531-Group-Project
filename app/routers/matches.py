@@ -54,7 +54,7 @@ def create_match(match: schemas.MatchCreate, db: Session = Depends(get_db)):
             )
 
     try:
-        return crud.create_match(db, lost, found)
+        row = crud.create_match(db, lost, found)
     except IntegrityError:
         # uq_matches_item_pair. The status check above already covers the
         # ordinary case; this catches two requests racing between the SELECT
@@ -63,6 +63,11 @@ def create_match(match: schemas.MatchCreate, db: Session = Depends(get_db)):
         raise APIError(
             409, errors.MATCH_ALREADY_EXISTS, "those two items are already matched"
         ) from None
+    messaging.emit_event(
+        "match.confirmed",
+        {"match_id": row.id, "lost_item_id": lost.id, "found_item_id": found.id},
+    )
+    return row
 
 
 @router.get("/matches", response_model=list[schemas.MatchResponse])

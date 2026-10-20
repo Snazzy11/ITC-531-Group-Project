@@ -6,7 +6,7 @@ from database.database import SessionLocal
 from database.models import Item, ItemStatus, ItemType, PotentialMatch
 from matching import matcher
 from matching.match_score import MatchScore
-from messaging import MATCHING_QUEUE, connect, publish_event
+from messaging import MATCHING_QUEUE, connect, emit_event
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logging.getLogger("pika").setLevel(logging.WARNING)
@@ -48,8 +48,10 @@ def process(item_id: int) -> None:
             for r in new
         ]
 
+    # Best-effort: the suggestions are already saved, so a broker hiccup only
+    # costs the notification.
     for payload in payloads:
-        announce(payload)
+        emit_event("match.potential_found", payload, source=SOURCE)
     log.info("Item %s: %d suggestions, %d new", item_id, len(rows), len(payloads))
 
 
@@ -59,15 +61,6 @@ def to_row(item: Item, score: MatchScore) -> PotentialMatch:
     else:
         lost_id, found_id = score.candidate_item_id, item.id
     return PotentialMatch(lost_item_id=lost_id, found_item_id=found_id, score=score.score)
-
-
-def announce(payload: dict) -> None:
-    """Best-effort, like the API's events: the suggestion is already saved, so a
-    broker hiccup only costs the notification."""
-    try:
-        publish_event("match.potential_found", payload, source=SOURCE)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("could not announce potential match %s: %s", payload, exc)
 
 
 def main():

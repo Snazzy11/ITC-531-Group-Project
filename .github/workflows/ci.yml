@@ -35,7 +35,7 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
@@ -49,3 +49,37 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=min
           tags: app:${{ github.sha }}
+      # Smoke test: run the image the way compose.yml does, with throwaway
+      # settings. The storage keys are the local RustFS ones from compose.yml.
+      - name: Write throwaway settings
+        run: |
+          cat > .env.local <<EOF
+          RABBITMQ_TAG=3.13.7-management-alpine
+          BROKER_USER=ci
+          BROKER_PASSWORD=$(openssl rand -hex 16)
+          GRAFANA_USER=ci
+          GRAFANA_PASSWORD=$(openssl rand -hex 16)
+          JWT_SECRET=$(openssl rand -hex 32)
+          S3_ENDPOINT_URL=http://storage:9000
+          S3_PUBLIC_ENDPOINT_URL=http://localhost:9000
+          S3_BUCKET=seekr-ci
+          AWS_DEFAULT_REGION=us-east-1
+          AWS_ACCESS_KEY_ID=seekr
+          AWS_SECRET_ACCESS_KEY=seekr-devonly
+          ADMIN_DISPLAY_NAME=ci-admin
+          ADMIN_PASSWORD=$(openssl rand -hex 16)
+          EOF
+      - name: Start the stack
+        run: >-
+          docker compose --env-file .env.local up -d --build --wait --wait-timeout 180
+          gateway app matching_worker image_worker logger notifier
+      - name: Smoke test
+        run: |
+          set -a; . ./.env.local; set +a
+          scripts/smoke_test.sh
+      - name: Show service logs
+        if: failure()
+        run: docker compose --env-file .env.local logs --no-color --tail 100
+      - name: Stop the stack
+        if: always()
+        run: docker compose --env-file .env.local down --volumes

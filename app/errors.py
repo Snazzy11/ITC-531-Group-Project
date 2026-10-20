@@ -28,17 +28,20 @@ Why it looks like this:
   location ("body.name"), which maps straight onto a form input.
 * `request_id` is also returned as the X-Request-ID header and logged with
   every 5xx, so a bug report can be traced without the response body exposing
-  a stack trace, a query, or a hostname.
+  a stack trace, a query, or a hostname. Every 5xx also publishes a
+  request.failed event, so it lands in the logger's events.jsonl.
 """
 
 import logging
 
+import messaging
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import InterfaceError, OperationalError, SQLAlchemyError
+from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger("lostfound")
@@ -126,11 +129,31 @@ def errors(*status_codes: int) -> dict:
 
 
 def make_response(
-    request: Request, status_code: int, body: ErrorBody, headers: dict[str, str] | None = None
+    request: Request,
+    status_code: int,
+    body: ErrorBody,
+    headers: dict[str, str] | None = None,
+    exc: Exception | None = None,
 ) -> JSONResponse:
     body.request_id = getattr(request.state, "request_id", None)
+    # A 5xx also goes to the event logger (request.failed). It runs after the
+    # response is sent, in a thread, so a slow broker can't delay the error.
+    background = None
+    if status_code >= 500:
+        payload = {
+            "request_id": body.request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status": status_code,
+            "code": body.code,
+            "error_type": type(exc).__name__ if exc else "unknown",
+        }
+        background = BackgroundTask(messaging.emit_event, "request.failed", payload)
     return JSONResponse(
-        status_code=status_code, content={"error": body.model_dump()}, headers=headers
+        status_code=status_code,
+        content={"error": body.model_dump()},
+        headers=headers,
+        background=background,
     )
 
 
@@ -164,7 +187,11 @@ async def handle_http_exception(request: Request, exc: StarletteHTTPException):
         code = STATUS_TO_CODE.get(exc.status_code, INTERNAL_ERROR)
         detail = DEFAULT_DETAIL.get(exc.status_code, "request failed")
     return make_response(
-        request, exc.status_code, ErrorBody(code=code, detail=detail), headers=exc.headers
+        request,
+        exc.status_code,
+        ErrorBody(code=code, detail=detail),
+        headers=exc.headers,
+        exc=exc,
     )
 
 
@@ -202,7 +229,7 @@ async def handle_db_unavailable(request: Request, exc: SQLAlchemyError):
         code=SERVICE_UNAVAILABLE,
         detail="the service is temporarily unavailable, please try again",
     )
-    return make_response(request, 503, body)
+    return make_response(request, 503, body, exc=exc)
 
 
 async def handle_db_error(request: Request, exc: SQLAlchemyError):
@@ -213,7 +240,7 @@ async def handle_db_error(request: Request, exc: SQLAlchemyError):
         request.url.path,
     )
     body = ErrorBody(code=INTERNAL_ERROR, detail="something went wrong on our end")
-    return make_response(request, 500, body)
+    return make_response(request, 500, body, exc=exc)
 
 
 async def handle_storage_error(request: Request, exc: Exception):
@@ -229,7 +256,7 @@ async def handle_storage_error(request: Request, exc: Exception):
         code=STORAGE_UNAVAILABLE,
         detail="file storage is temporarily unavailable, please try again",
     )
-    return make_response(request, 503, body)
+    return make_response(request, 503, body, exc=exc)
 
 
 async def handle_unexpected(request: Request, exc: Exception):
@@ -240,7 +267,7 @@ async def handle_unexpected(request: Request, exc: Exception):
         request.url.path,
     )
     body = ErrorBody(code=INTERNAL_ERROR, detail="something went wrong on our end")
-    return make_response(request, 500, body)
+    return make_response(request, 500, body, exc=exc)
 
 
 def register_error_handlers(app: FastAPI) -> None:

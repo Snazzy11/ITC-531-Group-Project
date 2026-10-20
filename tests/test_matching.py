@@ -65,9 +65,12 @@ def jobs(monkeypatch) -> list[int]:
 def announced(monkeypatch) -> list[dict]:
     """match.potential_found payloads the worker published, in order."""
     sent: list[dict] = []
-    monkeypatch.setattr(
-        matching_worker, "publish_event", lambda _type, payload, source: sent.append(payload)
-    )
+
+    def record(event_type, payload, source="campus-seekr-api"):
+        if event_type == "match.potential_found":
+            sent.append(payload)
+
+    monkeypatch.setattr(messaging, "publish_event", record)
     return sent
 
 

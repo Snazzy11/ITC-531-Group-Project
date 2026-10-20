@@ -72,6 +72,9 @@ has a runnable command for every endpoint.
 
 ## Tests
 
+For a guided test you run by hand, see `docs/WALKTHROUGH.md`. It posts a lost item, watches it get matched,
+confirms the match and runs an admin match search, with the output to expect at each step.
+
 With the stack running:
 
 - `scripts/api_tests.sh` is a curl walkthrough of the main flows. It signs in as the admin, so run it as `ADMIN_DISPLAY_NAME=... ADMIN_PASSWORD=... scripts/api_tests.sh` on a fresh stack with `DEMO_USER_PASSWORD` empty (its ids assume no demo data).
@@ -81,6 +84,15 @@ With the stack running:
   PYTHONPATH=app JWT_SECRET=$(openssl rand -hex 32) DATABASE_URL=postgresql+psycopg2://seekr:seekr-devonly@localhost:5432/seekr uv run --with httpx2 python scripts/api_tester.py
   ```
   It creates its own admin account and checks who is allowed to call what.
+- `scripts/smoke_test.sh` checks the running stack: `/health` through the gateway,
+  no service has exited, and a posted item's `item.created` event reaches the
+  logger's file. Run it as `ADMIN_DISPLAY_NAME=... ADMIN_PASSWORD=... scripts/smoke_test.sh`
+  (needs `jq`). CI runs the same script.
+
+Every event the services publish is written to `/app/logs/events.jsonl` by the
+`logger` service. Watch it with
+`docker compose --env-file .env.local exec logger tail -f /app/logs/events.jsonl`;
+`docs/MESSAGE_ARCHITECTURE.md` lists the events.
 
 # Authentication
 
@@ -260,6 +272,10 @@ Uses Ruff to check for linting violations,
 Run Python tests and reports testing coverage.
 ## build
 Builds the container image, gated by the test.
+Then smoke-tests it: writes throwaway settings to `.env.local`, starts the gateway,
+API, workers, logger and notifier with `docker compose up --wait`, and runs
+`scripts/smoke_test.sh`. On failure it prints the service logs. The stack is
+always torn down at the end.
 
 # Dashboard
 The Grafana dashboard is reachable from http://localhost:3000

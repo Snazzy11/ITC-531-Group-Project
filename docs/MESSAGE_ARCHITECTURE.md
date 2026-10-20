@@ -3,9 +3,9 @@
 ## How it works
 
 Requests go through the gateway to the API. RabbitMQ holds messages until a
-worker picks them up. The API publishes image jobs, matching jobs and item
-events. The matching worker publishes `match.potential_found`; nothing publishes
-`match.confirmed` yet.
+worker picks them up. The API publishes image jobs, matching jobs, item events,
+`match.confirmed` and `request.failed`. The matching worker publishes
+`match.potential_found` and the image worker publishes `image.processed`.
 
 ```text
 Client -> gateway (localhost:8000) -> API (internal port 8000)
@@ -54,7 +54,7 @@ Every event has these fields:
 - `schema_version`: currently 1.
 - `timestamp`: the time the event was built, in UTC.
 - `source`: the name of the service sending it.
-- `event_type`: one of the five types below.
+- `event_type`: one of the seven types below.
 - `payload`: the information for that event.
 
 - `item.created`: payload fields are `item_id`. Sent to `events.logger`.
@@ -62,10 +62,16 @@ Every event has these fields:
 - `item.withdrawn`: payload fields are `item_id`. Sent to `events.logger`.
 - `match.potential_found`: payload fields are `lost_item_id`, `found_item_id`, `score`. Sent to `events.logger`, `events.notifier`.
 - `match.confirmed`: payload fields are `match_id`, `lost_item_id`, `found_item_id`. Sent to `events.logger`, `events.notifier`.
+- `image.processed`: payload fields are `item_id`, `upload_id`, `status` (`ready` or `rejected`), and `reject_reason` for a rejected upload. Sent to `events.logger`.
+- `request.failed`: payload fields are `request_id`, `method`, `path`, `status` (500-599), `code` (the error code the client got) and `error_type` (the exception's class name). Sent to `events.logger`. The exception message and traceback stay in the API's console log, found by `request_id`, because they can include SQL or bucket details.
 
 The API publishes `item.created`, `item.updated`, and `item.withdrawn` after the
-change is saved. This is best-effort: if the broker is down, the API logs a
-warning and the request still succeeds, so an event can be lost.
+change is saved, `match.confirmed` after `POST /matches` saves a match, and
+`request.failed` after it has sent any 5xx response. The matching worker
+publishes `match.potential_found` and the image worker publishes
+`image.processed` (with `source` set to `matching-worker` and `image-worker`).
+All of this is best-effort: if the broker is down, the publisher logs a warning
+and carries on, so an event can be lost.
 
 All payload IDs must be positive integers. The score cannot be negative and has
 no upper limit; higher means more words in common.
@@ -74,7 +80,20 @@ The source cannot be blank, and extra fields are rejected. The models are in
 
 The `logger` reads from `events.logger`. Its `#` binding means it receives all
 events. It saves them to `/app/logs/events.jsonl` in the `eventlogs` volume and
-acknowledges after the write is saved to disk.
+acknowledges after the write is saved to disk. Each line is
+`{"routing_key": ..., "event": {...}}`. To watch it:
+
+```sh
+docker compose --env-file .env.local exec logger tail -f /app/logs/events.jsonl
+```
+
+At startup the logger checks that it can write the file and exits with
+`Cannot write /app/logs/events.jsonl` if not. That usually means the
+`eventlogs` volume was created by an older image that ran as root; `docker
+compose down --volumes` recreates it. The API declares the logger's and
+notifier's queues when it starts, so events sent before those services first
+run wait in the queue instead of being dropped. `scripts/smoke_test.sh` posts an
+item and checks that its `item.created` line reaches the file.
 
 The `notifier` reads from `events.notifier`. It has a binding for each of the two
 match event types. It logs "Would notify" and then acknowledges. It does not send
