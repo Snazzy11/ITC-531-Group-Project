@@ -1,6 +1,11 @@
 import heapq
 from itertools import count
 
+from database import models
+from database.database import get_db
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
+
 from matching.match_score import MatchScore
 
 
@@ -29,14 +34,58 @@ class ItemMatcher:
                 self._heap, (score, next(self._count), match)
             )
 
-# TODO implement
-    # def get_sorted(self) -> list[MatchScore]:
-    #     """Return retained objects in descending score order."""
-    #     return [
-    #         MatchScore(score=score) for score, count, obj in sorted(
-    #             self._heap, key=lambda item: item[0], reverse=True
-    #         )
-    #     ]
+    def get_sorted(self) -> list[MatchScore]:
+        """Return retained objects in descending score order."""
+        return [
+            match_score for score, count, match_score in sorted(
+                self._heap, key=lambda item: item[0], reverse=True
+            )
+        ]
 
     def __len__(self):
         return len(self._heap)
+
+def calculate_match_score(item: models.Item, candidate: models.Item) -> MatchScore:
+    item_words = item.description.lower().strip().split()
+    candidate_words = candidate.description.lower().strip().split()
+
+    already_matched_words = [str]
+
+    score = 0.0
+    for w in item_words:
+        if w in candidate_words:
+            if w in already_matched_words:
+                score += 0.1
+            else:
+                score += 0.25
+                already_matched_words.append(w)
+    return MatchScore(score=score, item_id=item.id, candidate_item_id=candidate.id)
+
+
+async def get_potential_matches(item_id: int, max_size: int = 10) -> list[MatchScore]:
+    try:
+        db: Session = get_db()
+    except OperationalError:
+        raise ConnectionError()
+
+    item: models.Item | None = (
+        db.query(models.Item)
+        .filter(models.Item.id == item_id)
+        .first()
+    )
+
+    if item is None:
+        return []
+
+    matcher = ItemMatcher(max_size)
+
+    candidates = (
+        db.query(models.Item).filter(models.Item.id != item_id)
+        .yield_per(100)
+    )
+
+    for candidate in candidates:
+        match_score = calculate_match_score(item, candidate)
+        matcher.add(match_score)
+
+    return matcher.get_sorted()
