@@ -81,13 +81,17 @@ curl -X POST $API/items -H "$USER" -H 'Content-Type: application/json' \
   -d '{"name":"Blue umbrella","description":"Black compact umbrella with a wooden handle, left in the library lobby","type":1,"location_id":1}'   # type: 0 = lost, 1 = found
 ```
 
-To add a photo or upload a file, see `milestones/milestone4/README.md`, which
-has a runnable command for every endpoint.
+Photos are added after the item is posted, and never pass through the API: `POST /items/{id}/images` returns a
+presigned `upload_url`, you `PUT` the file straight to the object store with it, then call
+`POST /items/{id}/images/{upload_id}/complete` (202) and the image worker checks, shrinks and stores it. Step 6 of
+`docs/WALKTHROUGH.md` walks through it. For uploading other files, see `milestones/milestone4/README.md`, which has a
+runnable command for every endpoint.
 
 ## Tests
 
-For a guided test you run by hand, see `docs/WALKTHROUGH.md`. It posts a lost item, watches it get matched,
-confirms the match and runs an admin match search, with the output to expect at each step.
+For a guided test you run by hand, see `docs/WALKTHROUGH.md`. It posts a lost item with a photo, watches it get
+matched, confirms the match, runs an admin match search, and reads the resulting metrics on `/metrics/` and in
+Grafana, with the output to expect at each step.
 
 With the stack running:
 
@@ -328,8 +332,13 @@ it with nothing to set up. Its four panels:
 - items posted per 5 minutes, lost and found as separate lines (`seekr_items_posted_total`)
 - matches confirmed per 5 minutes (`seekr_matches_confirmed_total`)
 
-The last two are the app's own metrics, defined in `app/metrics.py`. To change the dashboard, edit it in Grafana,
-export it as JSON, and replace `seekr.json`. Changes made only in Grafana are lost when its volume is removed.
+The last two are the app's own metrics, defined in `app/metrics.py`. They only count what comes through the API, so
+demo data isn't counted, and they start from 0 when the API container restarts. To change the dashboard, edit it in
+Grafana, export its JSON, and replace `seekr.json`. Grafana won't save changes to a dashboard loaded from a file.
+
+The numbers behind the panels come from the API itself, at http://localhost:8000/api/v1/metrics/ (keep the trailing
+slash). Prometheus scrapes that every 15 seconds (`monitoring/prometheus/prometheus.yml`). Step 9 of
+`docs/WALKTHROUGH.md` reads both the raw numbers and the dashboard.
 
 # Troubleshooting
 ## Doug

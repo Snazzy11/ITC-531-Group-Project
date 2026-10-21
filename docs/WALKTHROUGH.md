@@ -1,12 +1,15 @@
 # Walkthrough: from a lost item to a confirmed match
 
-This takes about 15 minutes. You start a fresh stack with the demo data, then play two people:
+This takes about 20 minutes. You start a fresh stack with the demo data, then play two people:
 
-- **Alex**, a student who lost an umbrella. Alex logs in, posts it, looks at what the app suggests, and confirms the match.
+- **Alex**, a student who lost an umbrella. Alex logs in, posts it with a photo, looks at what the app suggests, and
+  confirms the match.
 - **The admin**, who finds an item with no suggestions and runs a match search for it.
 
-The whole time, two other windows show the matching worker and the event log reacting. Each step says what to
-run, what you should see, and why. Some steps ask you to predict the result before you run the command.
+Then you read the metrics those actions produced. The whole time, other windows show the workers, the event log and
+the Grafana dashboard reacting. Between them, the steps use all four services: Postgres, RabbitMQ, the S3 object
+store and Prometheus. Each step says what to run, what you should see, and why. Some steps ask you to predict the
+result before you run the command.
 
 ## The idea in one picture
 
@@ -45,7 +48,7 @@ Three things to keep in mind:
 - Docker with compose, `curl` and `jq`.
 - **bash.** The commands use bash syntax. If your terminal runs fish, type `bash` first.
 - In `.env.local`:
-  - `ADMIN_DISPLAY_NAME` and `ADMIN_PASSWORD` set. That's the admin you use in step 7.
+  - `ADMIN_DISPLAY_NAME` and `ADMIN_PASSWORD` set. That's the admin you use in step 8.
   - `DEMO_USER_PASSWORD` set to something 6 to 72 characters long. Every demo user signs in with it.
   - Storage settings that work (see `.env.local.example`).
 - Run everything from the repo root.
@@ -73,7 +76,7 @@ You should see:
 - matched the two water bottles
 - queued one matching job, for the lost black backpack
 
-## 2. Open two windows to watch
+## 2. Open windows to watch
 
 **Terminal 2: the event log**, showing every event as one compact line:
 
@@ -90,10 +93,10 @@ The three suggestions the worker made for the backpack at startup should already
 {"type":"match.potential_found","source":"matching-worker","payload":{"lost_item_id":1,"found_item_id":8,"score":0.25}}
 ```
 
-**Terminal 3: the matching worker and the notifier:**
+**Terminal 3: the workers and the notifier:**
 
 ```bash
-docker compose --env-file .env.local logs -f matching_worker notifier
+docker compose --env-file .env.local logs -f matching_worker image_worker notifier
 ```
 
 Look for these lines:
@@ -102,7 +105,13 @@ Look for these lines:
 - A `Would notify for match.potential_found` line from the notifier for each suggestion. The notifier doesn't send
   anything yet; it only logs what it would send.
 
-Keep both windows open. Run everything else in terminal 1.
+The image worker only says `Waiting for jobs on jobs.image_processor` until step 6.
+
+**A browser: the dashboard.** Open http://localhost:3000, sign in with `GRAFANA_USER` and `GRAFANA_PASSWORD` from
+`.env.local`, and open the **Seekr** dashboard (Dashboards, then Seekr). It's mostly empty for now; step 9 comes
+back to it.
+
+Keep all three open. Run everything else in terminal 1.
 
 ## 3. Set up terminal 1
 
@@ -121,7 +130,7 @@ DEMO_USER_PASSWORD=$(env_value DEMO_USER_PASSWORD)
 Nothing prints yet. This only defines a `login` helper and copies three settings out of `.env.local`. If you put
 quotes around those values in `.env.local`, set the three variables by hand instead.
 
-`login` takes a display name and a password, and prints that account's token. Steps 5 and 7 use it. Check that it
+`login` takes a display name and a password, and prints that account's token. Steps 5 and 8 use it. Check that it
 works with the admin from `.env.local`:
 
 ```bash
@@ -237,7 +246,100 @@ curl -s "$API/items/$LOST/potential-matches" | jq -c '.[] | {found_item_id, scor
 
 If the list is empty, the worker hasn't finished yet. Run the command again. If it stays empty, look at terminal 3.
 
-## 6. Confirm the match
+## 6. Add a photo to Alex's item
+
+Photos never pass through the API. Alex asks the API for an upload address, sends the file straight to the object
+store, and tells the API it's done. The image worker then checks the file, shrinks it and stores the finished photo.
+
+First make a sample photo. This runs Python inside the API container, so you don't need anything installed:
+
+```bash
+docker compose --env-file .env.local exec -T app python -c "import io, sys; from PIL import Image; b = io.BytesIO(); Image.new('RGB', (1600, 1200), 'navy').save(b, 'JPEG'); sys.stdout.buffer.write(b.getvalue())" > photo.jpg
+```
+
+That's a plain 1600 × 1200 navy rectangle. A JPEG or PNG of your own works too; use its name instead of `photo.jpg`.
+
+Ask for an upload address:
+
+```bash
+UPLOAD=$(curl -s -X POST "$API/items/$LOST/images" -H "Authorization: Bearer $ALEX")
+UPLOAD_ID=$(echo "$UPLOAD" | jq -r .upload_id)
+echo "$UPLOAD" | jq -c '{upload_id, status, expires_in}'
+echo "$UPLOAD" | jq -r .upload_url | cut -d/ -f1-3
+```
+
+```
+{"upload_id":"33bde0b6-48c8-4005-8f75-4324ea6b9b05","status":"awaiting_upload","expires_in":600}
+http://localhost:9000
+```
+
+Your `upload_id` will differ. `upload_url` is a presigned URL. It points at the object store, not the API (the
+second line is its address; with the local store, `http://localhost:9000`), and carries its own signature, so the next request needs no token. It stops
+working after `expires_in` seconds.
+
+Send the file to the store, then tell the API:
+
+```bash
+curl -s -X PUT --upload-file photo.jpg "$(echo "$UPLOAD" | jq -r .upload_url)" -o /dev/null -w '%{http_code}\n'
+curl -s -X POST "$API/items/$LOST/images/$UPLOAD_ID/complete" -H "Authorization: Bearer $ALEX" -o /dev/null -w '%{http_code}\n'
+```
+
+```
+200
+202
+```
+
+The 200 comes from the object store. The 202 comes from the API: it put a job on RabbitMQ and answered without
+waiting. Now look at the other windows:
+
+- **Terminal 3:** `INFO Stored items/11/<upload_id>/photo.jpg (image/jpeg, 30629 bytes in)` from the image worker.
+- **Terminal 2:** `{"type":"image.processed","source":"image-worker","payload":{...,"status":"ready",...}}`.
+
+Check the result:
+
+```bash
+sleep 2
+curl -s "$API/items/$LOST/images/$UPLOAD_ID" | jq -c '{status, reject_reason}'
+curl -s -o fetched.jpg -w '%{http_code} %{content_type}\n' "$(curl -s "$API/items/$LOST" | jq -r .photo_url)"
+docker compose --env-file .env.local exec -T app python -c "import io, sys; from PIL import Image; print(Image.open(io.BytesIO(sys.stdin.buffer.read())).size)" < fetched.jpg
+```
+
+```
+{"status":"ready","reject_reason":null}
+200 image/jpeg
+(1280, 960)
+```
+
+> **Check:** The item now has a `photo_url`, another presigned URL, this time for downloading. The worker shrank the
+> photo to fit 1280 pixels on its longest side and re-encoded it, so `fetched.jpg` is much smaller than `photo.jpg`
+> (compare them with `ls -l photo.jpg fetched.jpg`). Open `fetched.jpg` in an image viewer to see it.
+
+Now try to break it by sending a text file instead:
+
+```bash
+echo "not a photo" > note.txt
+UPLOAD=$(curl -s -X POST "$API/items/$LOST/images" -H "Authorization: Bearer $ALEX")
+UPLOAD_ID=$(echo "$UPLOAD" | jq -r .upload_id)
+curl -s -X PUT --upload-file note.txt "$(echo "$UPLOAD" | jq -r .upload_url)" -o /dev/null -w '%{http_code}\n'
+curl -s -X POST "$API/items/$LOST/images/$UPLOAD_ID/complete" -H "Authorization: Bearer $ALEX" -o /dev/null -w '%{http_code}\n'
+sleep 2
+curl -s "$API/items/$LOST/images/$UPLOAD_ID" | jq -c '{status, reject_reason}'
+curl -s "$API/items/$LOST" | jq '.photo_url != null'
+```
+
+```
+200
+202
+{"status":"rejected","reject_reason":"text/plain is not an allowed image type"}
+true
+```
+
+> **Why did the store take it?** The store accepts whatever bytes it's given; checking them is the worker's job, and
+> it looks at the bytes themselves, not the file name. Terminal 3 shows the rejection, and terminal 2 gets an
+> `image.processed` event with `"status":"rejected"`. The last line shows the item kept its good photo: a rejected
+> upload never replaces it.
+
+## 7. Confirm the match
 
 Alex recognises item 10 as their umbrella:
 
@@ -285,7 +387,7 @@ curl -s -X POST $API/matches -H "$JSON" -H "Authorization: Bearer $ALEX" \
 {"code":"ITEM_NOT_OPEN","detail":"item 11 is matched and cannot be matched"}
 ```
 
-## 7. Log in as the admin and run a match search
+## 8. Log in as the admin and run a match search
 
 ```bash
 ADMIN=$(login "$ADMIN_DISPLAY_NAME" "$ADMIN_PASSWORD")
@@ -359,7 +461,51 @@ curl -s -X POST "$API/items/$LOST/match-search" -H "Authorization: Bearer $ADMIN
 {"code":"ITEM_NOT_OPEN","detail":"item 11 is matched and cannot be matched"}
 ```
 
-## 8. Optional: undo the match
+## 9. Read the metrics
+
+The API counts what it does, and Prometheus reads those counts every 15 seconds. Start with the raw counts, which
+the API serves at `/metrics/`:
+
+```bash
+curl -s $API/metrics/ | grep -E '^seekr_(items_posted|matches_confirmed)_total'
+```
+
+```
+seekr_items_posted_total{type="lost"} 1.0
+seekr_items_posted_total{type="found"} 0.0
+seekr_matches_confirmed_total 1.0
+```
+
+> **Think it through:** Only Alex's umbrella and its match were counted. The 10 demo items and the water-bottle match
+> were written straight to the database at startup, not posted through the API. These counters also go back to 0
+> whenever the API container restarts.
+
+Every request is counted too, labelled with its method, route and status:
+
+```bash
+curl -s $API/metrics/ | grep '^seekr_requests_total{.*route="/items/{item_id}/potential-matches"'
+```
+
+```
+seekr_requests_total{method="GET",route="/items/{item_id}/potential-matches",status="200"} 6.0
+```
+
+Your count will differ. Notice the route is the template, `/items/{item_id}/potential-matches`, not
+`/items/11/potential-matches`. All items share one line instead of each item adding a new one forever.
+
+Now go back to the **Seekr** dashboard in the browser. It refreshes every 30 seconds, so give it a minute after your
+last command:
+
+- **Request rate:** a rise while you were running steps 4 to 8.
+- **Error rate:** not zero. Steps 7 and 8 caused 401, 403 and 409 responses on purpose, and this panel counts every
+  4xx and 5xx.
+- **Items posted:** a `lost` line at about 1 for the five minutes after you posted the umbrella, and `found` at 0.
+- **Matches confirmed:** about 1 for the five minutes after Alex confirmed the match.
+
+Prometheus has its own page at http://localhost:9090. Type `seekr_items_posted_total` there to see the stored values
+behind the panel.
+
+## 10. Optional: undo the match
 
 Unmatching puts both items back to `open`, which automatically queues matching for both:
 
@@ -392,9 +538,11 @@ What to notice:
 |---|---|
 | 1, 4 | The stack starts, browsing is public, and the demo data and startup matching ran |
 | 5 | Posting an item queues matching on RabbitMQ. The worker scores only `open` items of the other type, and common words don't count |
-| 6 | Confirming a match sets both items to `matched`, hides their suggestions, and blocks matching them again (409) |
-| 7 | `match-search` is admin-only (401 with no token, 403 for a user, 202 for the admin) and refuses closed items (409) |
-| 8 | Reopening items re-runs matching without repeating notifications |
+| 6 | Photos go straight to the object store with presigned URLs, never through the API. `/complete` returns 202, and the image worker checks, shrinks and stores the photo, or rejects a file that isn't an image |
+| 7 | Confirming a match sets both items to `matched`, hides their suggestions, and blocks matching them again (409) |
+| 8 | `match-search` is admin-only (401 with no token, 403 for a user, 202 for the admin) and refuses closed items (409) |
+| 9 | The API exposes request counts by route template plus its own counters, Prometheus stores them, and Grafana graphs them |
+| 10 | Reopening items re-runs matching without repeating notifications |
 | 2 | Every one of these left a line in `/app/logs/events.jsonl`, written by the logger service |
 
 ## Cleaning up
@@ -430,5 +578,12 @@ docker compose --env-file .env.local down --volumes  # deletes it all
   `--volumes`, with `DEMO_USER_PASSWORD` set.
 - **Suggestions never show up:** `docker compose --env-file .env.local ps matching_worker` should show it running.
   Terminal 3 shows any error.
+- **The photo `PUT` fails with `Could not resolve host: storage`:** the upload URL was signed for the address the
+  containers use, which your machine can't reach. Set `S3_PUBLIC_ENDPOINT_URL=http://localhost:9000` in `.env.local`
+  and run `docker compose --env-file .env.local up -d` to restart the API with it.
+- **A photo stays `processing`:** the image worker didn't finish the job.
+  `docker compose --env-file .env.local ps image_worker` should show it running; terminal 3 shows any error.
+- **A dashboard panel says "No data":** Prometheus scrapes every 15 seconds and the panels look at 5-minute windows,
+  so wait a minute. If it stays empty, http://localhost:9090/targets should show the `seekr-app` target as `UP`.
 - **Terminal 2 stays empty, or the logger exited with `Cannot write /app/logs/events.jsonl`:** the event log volume
   is from an older image. Step 1's `down --volumes` recreates it.
