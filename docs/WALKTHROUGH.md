@@ -28,6 +28,7 @@ sequenceDiagram
     L->>L: append a line to /app/logs/events.jsonl
     You->>API: GET /items/11/potential-matches
 ```
+(if this chart does not appear as a graph, you maid need to install a `mermaid` extension in your IDE)
 
 Three things to keep in mind:
 
@@ -117,8 +118,22 @@ ADMIN_PASSWORD=$(env_value ADMIN_PASSWORD)
 DEMO_USER_PASSWORD=$(env_value DEMO_USER_PASSWORD)
 ```
 
-`login NAME PASSWORD` prints a token. The last three lines copy your settings out of `.env.local`. If you put quotes
-around those values, set the three variables by hand instead.
+Nothing prints yet. This only defines a `login` helper and copies three settings out of `.env.local`. If you put
+quotes around those values in `.env.local`, set the three variables by hand instead.
+
+`login` takes a display name and a password, and prints that account's token. Steps 5 and 7 use it. Check that it
+works with the admin from `.env.local`:
+
+```bash
+login "$ADMIN_DISPLAY_NAME" "$ADMIN_PASSWORD" | cut -c1-20
+```
+
+```
+eyJhbGciOiJIUzI1NiIs
+```
+
+Every token starts like this. If you get `null` instead, the name or password doesn't match an account. See the last
+section.
 
 ## 4. Look around (no login needed)
 
@@ -400,8 +415,17 @@ docker compose --env-file .env.local down --volumes  # deletes it all
 - **curl returns `{"error":{"code":"SERVICE_UNAVAILABLE",...}}`:** the gateway couldn't reach the API. Run
   `docker compose --env-file .env.local ps`. If `app` is `healthy`, recreate the gateway:
   `docker compose --env-file .env.local up -d --force-recreate gateway`.
-- **`login` prints `null`:** wrong name or password. The demo users get the `DEMO_USER_PASSWORD` that was set when
-  the database was created. If it was empty then, there are no demo users; start again from step 1.
+- **`login` prints `null`:** wrong name or password. Call it with a real name and password, like
+  `login "$ADMIN_DISPLAY_NAME" "$ADMIN_PASSWORD"`; running `login` with nothing after it, or pasting the `curl` line
+  from inside it on its own, sends an empty login. Accounts keep the password they were created with:
+  - **The admin** has the `ADMIN_PASSWORD` from when the API first created it. Editing `.env.local` later doesn't
+    change it.
+  - **The demo users** have the `DEMO_USER_PASSWORD` from when the database was created. If that was empty, there
+    are no demo users; start again from step 1.
+- **A worker's log shows `ConnectionClosedByBroker ... reason 'shutdown'`:** RabbitMQ was stopped or restarted while
+  that worker was connected. The workers don't reconnect on their own, so it stopped. Messages wait in its queue
+  meanwhile. Run `docker compose --env-file .env.local up -d` to start any service that stopped, then check
+  `docker compose --env-file .env.local ps -a`.
 - **The item list is empty, or the ids are different:** the database wasn't new. Go back to step 1, including
   `--volumes`, with `DEMO_USER_PASSWORD` set.
 - **Suggestions never show up:** `docker compose --env-file .env.local ps matching_worker` should show it running.
