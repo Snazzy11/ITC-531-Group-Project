@@ -28,7 +28,7 @@ sequenceDiagram
     L->>L: append a line to /app/logs/events.jsonl
     You->>API: GET /items/11/potential-matches
 ```
-(if this chart does not appear as a graph, you maid need to install a `mermaid` extension in your IDE)
+(if this chart does not appear as a graph, you may need to install a `mermaid` extension in your IDE)
 
 Three things to keep in mind:
 
