@@ -105,7 +105,8 @@ def matches_by_item(item_id: int, db: Session = Depends(get_db)):
 
 # There is deliberately no PATCH /matches/{id}. Changing a match to use a different
 # items is not just an edit, the old pair must be changed back to 'open' and the
-# new pair validated again, so we use DELETE + POST.
+# new pair validated again, so we use DELETE + POST. See "No update for matches"
+# under Decisions in the README.
 
 
 @router.delete(

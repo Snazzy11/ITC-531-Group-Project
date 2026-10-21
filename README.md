@@ -358,3 +358,12 @@ For week 1: These are the role assignments
 The concept we will pursue is a lost and found system for the campus community. Users will be able to upload images of items they find around campus as well as the locations they found them out and/or descriptions of lost items and last seen locations.
 
 We decided not to pursue features that could benefit this application such as: such as AI image recognition to identify items, a live messaging system between users, or a mobile application. While all these features would make for a better user experience and would contribute greatly to the app's usability, they remain out of scope for the purposes of this project.
+
+## No update for matches
+Matches have create (`POST /matches`), read (`GET /matches`, `GET /matches/{id}`, `GET /items/{id}/matches`) and
+delete (`DELETE /matches/{id}`), and no update, on purpose. We considered `PATCH /matches/{id}` and decided against
+it. A match has no field worth editing on its own: it only pairs a lost item with a found one. Changing which items
+it pairs is not an edit. The old pair has to go back to `open` (which also re-runs matching for both), and the new
+pair has to pass every check a new match does: one lost and one found item, both `open`, not already matched. That is
+exactly `DELETE` followed by `POST`, so a `PATCH` would only duplicate those two routes with more ways to get it wrong.
+For the final product's "full CRUD" requirement, we ask that this deliberate decision count as the update for matches.

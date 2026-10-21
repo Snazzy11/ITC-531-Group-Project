@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 router = APIRouter(tags=["meta"])
 
 
+# No response schema on purpose: a health probe should be as simple as possible.
 @router.get("/health")
 def health(response: Response, db: Session = Depends(get_db)):
     """Check database connectivity without exposing connection details."""

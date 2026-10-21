@@ -45,6 +45,9 @@ jobs:
           context: .
           file: Dockerfile
           platforms: linux/amd64
+          # Not pushed: our free-tier AWS account can't create the IAM role CI
+          # would need (OIDC), so CI has no way to push to ECR. The full
+          # explanation is in milestones/milestone6/part2.md, notes 4 and below.
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=min
