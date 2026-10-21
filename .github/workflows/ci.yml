@@ -49,8 +49,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=min
           tags: app:${{ github.sha }}
-      # Smoke test: run the image the way compose.yml does, with throwaway
-      # settings. The storage keys are the local RustFS ones from compose.yml.
+      # "smoke test" to run the image with throwaway keys
       - name: Write throwaway settings
         run: |
           cat > .env.local <<EOF
@@ -69,11 +68,6 @@ jobs:
           ADMIN_DISPLAY_NAME=ci-admin
           ADMIN_PASSWORD=$(openssl rand -hex 16)
           EOF
-      # The workers have `healthcheck: disable: true` (they share the API's
-      # image, whose HEALTHCHECK calls the API). The runner's compose fails
-      # `--wait` on those ("has no healthcheck configured"), so only the API,
-      # the gateway and their dependencies are waited on. smoke_test.sh then
-      # checks that no worker has exited.
       - name: Start the stack
         run: |
           docker compose --env-file .env.local up -d --build --wait --wait-timeout 180 gateway app
