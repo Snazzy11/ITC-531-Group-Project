@@ -18,6 +18,18 @@ Copy `.env.local` and fill it in: `cp .env.local.example .env.local`
 | `JWT_SECRET`                           | Required. Signs login tokens. Generate one with `openssl rand -hex 32`. The app will not start without it |
 | `ADMIN_DISPLAY_NAME`, `ADMIN_PASSWORD` | Needed to use any admin route (managing locations, hard deletes, listing users). The app creates this admin account on startup. Display name up to 50 characters, password up to 72 bytes. See [Authentication](#authentication) |
 | `DEMO_USER_PASSWORD`                   | Optional. When set, a brand-new database is filled with demo data: users `alex-rivera`, `jordan-lee` and `sam-patel` (all sign in with this password), 3 locations, and 10 items, 2 of them matched, plus one matching job for the lost backpack. The list is in `app/demo_data.py`. 6 to 72 characters. Leave it empty to start with an empty database |
+| `RABBITMQ_TAG`                         | Required. The RabbitMQ image tag. Keep the one in `.env.local.example` (`3.13.7-management-alpine`) |
+| `GRAFANA_USER`, `GRAFANA_PASSWORD`     | Required. The Grafana admin login; see [Dashboard](#dashboard) |
+| `S3_ENDPOINT_URL`                      | Where the API and image worker reach the object store. For the local store in `compose.yml`: `http://storage:9000`. Unset means AWS's own S3 endpoint |
+| `S3_PUBLIC_ENDPOINT_URL`               | The address presigned photo URLs are signed for, which the client must be able to reach. Locally: `http://localhost:9000`. Leave it empty when it's the same as `S3_ENDPOINT_URL` |
+| `S3_BUCKET`                            | Required. The bucket name. The API creates it on startup if it doesn't exist |
+| `AWS_DEFAULT_REGION`                   | The bucket's region. The local store accepts any value |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | The object store's key pair. For the local store: `seekr` and `seekr-devonly`, the local development keys set on the `storage` service in `compose.yml` |
+| `S3_PORT`, `PROMETHEUS_PORT`, `GRAFANA_PORT` | Optional. Host ports for the local store, Prometheus and Grafana, if the defaults 9000, 9090 and 3000 are taken |
+
+`compose.yml` sets two more itself, so you don't put them in `.env.local`: `DATABASE_URL` (the `db` service, with
+its local development password `seekr-devonly`) and `BROKER_HOST` (`broker`). For a cloud deployment, the full list of
+what the app reads is in `adapters/aws.env.example`; see [Deploying](#deploying).
 
 Bring the container up and test it:
 ```sh
@@ -36,6 +48,8 @@ this: `users.is_admin` is gone and the `roles` tables are new.)
 | http://localhost:8000/api/v1 | The API |
 | http://localhost:15672 | RabbitMQ dashboard (log in with your broker user) |
 | http://localhost:9000 | Local S3 API (RustFS), where photos are stored |
+| http://localhost:3000 | Grafana dashboard; see [Dashboard](#dashboard) |
+| http://localhost:9090 | Prometheus |
 
 ## First requests
 
@@ -67,13 +81,17 @@ curl -X POST $API/items -H "$USER" -H 'Content-Type: application/json' \
   -d '{"name":"Blue umbrella","description":"Black compact umbrella with a wooden handle, left in the library lobby","type":1,"location_id":1}'   # type: 0 = lost, 1 = found
 ```
 
-To add a photo or upload a file, see `milestones/milestone4/README.md`, which
-has a runnable command for every endpoint.
+Photos are added after the item is posted, and never pass through the API: `POST /items/{id}/images` returns a
+presigned `upload_url`, you `PUT` the file straight to the object store with it, then call
+`POST /items/{id}/images/{upload_id}/complete` (202) and the image worker checks, shrinks and stores it. Step 6 of
+`docs/WALKTHROUGH.md` walks through it. For uploading other files, see `milestones/milestone4/README.md`, which has a
+runnable command for every endpoint.
 
 ## Tests
 
-For a guided test you run by hand, see `docs/WALKTHROUGH.md`. It posts a lost item, watches it get matched,
-confirms the match and runs an admin match search, with the output to expect at each step.
+For a guided test you run by hand, see `docs/WALKTHROUGH.md`. It posts a lost item with a photo, watches it get
+matched, confirms the match, runs an admin match search, and reads the resulting metrics on `/metrics/` and in
+Grafana, with the output to expect at each step.
 
 With the stack running:
 
@@ -277,10 +295,50 @@ API, workers, logger and notifier with `docker compose up --wait`, and runs
 `scripts/smoke_test.sh`. On failure it prints the service logs. The stack is
 always torn down at the end.
 
+# Deploying
+CI builds the image but doesn't push or deploy it; the comment on `push: false` in `.github/workflows/ci.yml` says
+why. We deploy to AWS (ECS behind API Gateway) by hand with our adapter, `adapters/aws.sh`.
+`milestones/milestone6/README.md` has a full run with its output.
+
+1. Copy `adapters/aws.env.example` to `adapters/aws.env` and fill it in. The app's own settings (database, JWT secret,
+   broker, bucket) go in the ECS task definition, not in this file. The example lists them all.
+2. Build the image, tagged with the full commit SHA:
+   ```sh
+   set -a; source adapters/aws.env; set +a
+   docker build --platform linux/amd64 -t "$IMAGE_REF" .
+   ```
+3. Deploy. `adapter_deploy` pushes the image to ECR if it isn't there yet, rolls the ECS service onto it, checks
+   `/health`, and prints the service URL on its last line:
+   ```sh
+   source adapters/aws.sh
+   adapter_deploy
+   ```
+4. Audit, and tear down when you're done. `cloud-audit.sh` and `cloud-down.sh` come from the course's Module 7
+   folder; copy them into `scripts/` first.
+   ```sh
+   bash scripts/cloud-audit.sh aws    # what exists
+   bash scripts/cloud-down.sh aws     # destroy it
+   bash scripts/cloud-audit.sh aws    # should print CLEAN
+   ```
+
 # Dashboard
-The Grafana dashboard is reachable from http://localhost:3000
-The two panels included show the request rate over the past 5 minutes as well as the percentage of requests that were errors over the past 5 minutes.
-A username/password must be configured when filling in the .env.local file.
+The Grafana dashboard is reachable from http://localhost:3000. Sign in with `GRAFANA_USER` and `GRAFANA_PASSWORD`
+from `.env.local`. Prometheus itself is at http://localhost:9090.
+
+Grafana loads the "Seekr" dashboard on startup from `monitoring/grafana/dashboards/seekr.json`, so a fresh stack has
+it with nothing to set up. Its four panels:
+- request rate over the past 5 minutes
+- percentage of requests that were errors (4xx or 5xx) over the past 5 minutes
+- items posted per 5 minutes, lost and found as separate lines (`seekr_items_posted_total`)
+- matches confirmed per 5 minutes (`seekr_matches_confirmed_total`)
+
+The last two are the app's own metrics, defined in `app/metrics.py`. They only count what comes through the API, so
+demo data isn't counted, and they start from 0 when the API container restarts. To change the dashboard, edit it in
+Grafana, export its JSON, and replace `seekr.json`. Grafana won't save changes to a dashboard loaded from a file.
+
+The numbers behind the panels come from the API itself, at http://localhost:8000/api/v1/metrics/ (keep the trailing
+slash). Prometheus scrapes that every 15 seconds (`monitoring/prometheus/prometheus.yml`). Step 9 of
+`docs/WALKTHROUGH.md` reads both the raw numbers and the dashboard.
 
 # Troubleshooting
 ## Doug
@@ -289,6 +347,12 @@ Doug was initially unable to get the project to build after adding the code for 
 Initial deployment kep giving 404 codes due to only having a "/health" route and lacking a "/" route.
 ## Parker
 Because we generate the requirements.txt with UV, the requirements state the hashes of the release instead of just the version. For Pillow specifically, it was throwing errors because it could not get the right version. Parker first tried building it from source in the CI script, but the runner had outdated dependencies. Parker ended up enclosing that from the dependencies with an extra flag in the pip command, and we will not need to run any tests using Pillow in the future.
+
+After rebuilding the stack, every request through `localhost:8000` returned 503 `SERVICE_UNAVAILABLE`, even though `docker compose ps` showed the API healthy and its own health checks passing. The 503 came from the gateway, not the API: nginx looked up the `app` container's address once at startup, and `up --build` had recreated the API container at a new address. The fix was to make nginx look the address up again every 10 seconds through Docker's DNS (`resolve` in the upstream block of `gateway.conf`).
+
+The API refused to start with a "no credentials" error from boto3. The S3 settings in `.env.local.example` used names the code never reads (`S3_ENDPOINT`, `S3_REGION`), so the real keys were never set and boto3 would have talked to Amazon instead of the local store anyway. The fix was renaming them to what `app/ports/storage.py` reads (`S3_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, and so on) and filling in the keys.
+
+CI failed starting the stack with `container campus-seekr-notifier-1 has no healthcheck configured`. The workers turn off the image's health check (it calls the API, which they don't run), and the older Docker Compose on GitHub's runners rejects `--wait` for such containers, while newer versions just wait for them to be running. The fix was waiting only for the gateway and API, starting the workers separately, and having `scripts/smoke_test.sh` check that none of them exited.
 
 # Design docs
 - `docs/Architecture.drawio.html` - the services, the store, and the presigned path
@@ -358,3 +422,12 @@ For week 1: These are the role assignments
 The concept we will pursue is a lost and found system for the campus community. Users will be able to upload images of items they find around campus as well as the locations they found them out and/or descriptions of lost items and last seen locations.
 
 We decided not to pursue features that could benefit this application such as: such as AI image recognition to identify items, a live messaging system between users, or a mobile application. While all these features would make for a better user experience and would contribute greatly to the app's usability, they remain out of scope for the purposes of this project.
+
+## No update for matches
+Matches have create (`POST /matches`), read (`GET /matches`, `GET /matches/{id}`, `GET /items/{id}/matches`) and
+delete (`DELETE /matches/{id}`), and no update, on purpose. We considered `PATCH /matches/{id}` and decided against
+it. A match has no field worth editing on its own: it only pairs a lost item with a found one. Changing which items
+it pairs is not an edit. The old pair has to go back to `open` (which also re-runs matching for both), and the new
+pair has to pass every check a new match does: one lost and one found item, both `open`, not already matched. That is
+exactly `DELETE` followed by `POST`, so a `PATCH` would only duplicate those two routes with more ways to get it wrong.
+For the final product's "full CRUD" requirement, we ask that this deliberate decision count as the update for matches.
