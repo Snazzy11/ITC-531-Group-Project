@@ -278,9 +278,18 @@ API, workers, logger and notifier with `docker compose up --wait`, and runs
 always torn down at the end.
 
 # Dashboard
-The Grafana dashboard is reachable from http://localhost:3000
-The two panels included show the request rate over the past 5 minutes as well as the percentage of requests that were errors over the past 5 minutes.
-A username/password must be configured when filling in the .env.local file.
+The Grafana dashboard is reachable from http://localhost:3000. Sign in with `GRAFANA_USER` and `GRAFANA_PASSWORD`
+from `.env.local`. Prometheus itself is at http://localhost:9090.
+
+Grafana loads the "Seekr" dashboard on startup from `monitoring/grafana/dashboards/seekr.json`, so a fresh stack has
+it with nothing to set up. Its four panels:
+- request rate over the past 5 minutes
+- percentage of requests that were errors (4xx or 5xx) over the past 5 minutes
+- items posted per 5 minutes, lost and found as separate lines (`seekr_items_posted_total`)
+- matches confirmed per 5 minutes (`seekr_matches_confirmed_total`)
+
+The last two are the app's own metrics, defined in `app/metrics.py`. To change the dashboard, edit it in Grafana,
+export it as JSON, and replace `seekr.json`. Changes made only in Grafana are lost when its volume is removed.
 
 # Troubleshooting
 ## Doug

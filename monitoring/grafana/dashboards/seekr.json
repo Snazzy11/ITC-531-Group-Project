@@ -1,0 +1,64 @@
+{
+  "uid": "seekr",
+  "title": "Seekr",
+  "description": "Panels use the default data source (Prometheus, from datasource.yml). The request queries are the ones in milestones/milestone6/OBSERVABILITY.md.",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Request rate (requests/s, 5m window)",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(seekr_requests_total[5m]))", "legendFormat": "requests/s" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Error rate (% of requests with a 4xx or 5xx, 5m window)",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(rate(seekr_requests_total{status=~\"[45]..\"}[5m])) / sum(rate(seekr_requests_total[5m]))",
+          "legendFormat": "errors %"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Items posted (per 5m, lost vs found)",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (type) (increase(seekr_items_posted_total[5m]))",
+          "legendFormat": "{{type}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Matches confirmed (per 5m)",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(seekr_matches_confirmed_total[5m]))",
+          "legendFormat": "matches"
+        }
+      ]
+    }
+  ]
+}

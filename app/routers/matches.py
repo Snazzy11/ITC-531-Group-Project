@@ -1,6 +1,7 @@
 import crud
 import errors
 import messaging
+import metrics
 import schemas
 from auth import admin, login_required
 from database import models
@@ -63,6 +64,7 @@ def create_match(match: schemas.MatchCreate, db: Session = Depends(get_db)):
         raise APIError(
             409, errors.MATCH_ALREADY_EXISTS, "those two items are already matched"
         ) from None
+    metrics.MATCHES_CONFIRMED.inc()
     messaging.emit_event(
         "match.confirmed",
         {"match_id": row.id, "lost_item_id": lost.id, "found_item_id": found.id},

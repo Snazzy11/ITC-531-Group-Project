@@ -1,0 +1,9 @@
+apiVersion: 1
+# Loads every dashboard JSON in monitoring/grafana/dashboards (mounted at
+# /etc/grafana/dashboards by compose.yml) when Grafana starts.
+providers:
+  - name: seekr
+    type: file
+    disableDeletion: true
+    options:
+      path: /etc/grafana/dashboards

@@ -3,6 +3,7 @@ import logging
 import crud
 import errors
 import messaging
+import metrics
 import presenters
 import schemas
 from auth import admin, current_user, require_owner_or_admin
@@ -39,6 +40,7 @@ def create_item(
     if not location.is_active:
         raise APIError(409, errors.LOCATION_INACTIVE, "that location has been retired")
     row = crud.create_item(db, item, user.id)
+    metrics.ITEMS_POSTED.labels(models.ItemType(row.type).name.lower()).inc()
     messaging.emit("item.created", row.id)
     messaging.queue_matching(row.id)
     return presenters.item_out(row)
