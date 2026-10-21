@@ -16,13 +16,33 @@ class ItemPayload(Payload):
 class PotentialMatchPayload(Payload):
     lost_item_id: int = Field(gt=0, strict=True)
     found_item_id: int = Field(gt=0, strict=True)
-    score: float = Field(ge=0, le=1, allow_inf_nan=False)
+    # No upper limit: the matcher's score grows with the number of shared words.
+    score: float = Field(ge=0, allow_inf_nan=False)
 
 
 class ConfirmedMatchPayload(Payload):
     match_id: int = Field(gt=0, strict=True)
     lost_item_id: int = Field(gt=0, strict=True)
     found_item_id: int = Field(gt=0, strict=True)
+
+
+class ImageProcessedPayload(Payload):
+    item_id: int = Field(gt=0, strict=True)
+    upload_id: str = Field(min_length=1)
+    status: Literal["ready", "rejected"]
+    reject_reason: str | None = None
+
+
+class RequestFailedPayload(Payload):
+    """Enough to find the full error in the API's console log, and nothing
+    more: the exception message can carry SQL or bucket details."""
+
+    request_id: str | None
+    method: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    status: int = Field(ge=500, le=599, strict=True)
+    code: str = Field(min_length=1)
+    error_type: str = Field(min_length=1)
 
 
 class Event(BaseModel):
@@ -59,12 +79,24 @@ class ConfirmedMatchEvent(Event):
     payload: ConfirmedMatchPayload
 
 
+class ImageProcessedEvent(Event):
+    event_type: Literal["image.processed"] = "image.processed"
+    payload: ImageProcessedPayload
+
+
+class RequestFailedEvent(Event):
+    event_type: Literal["request.failed"] = "request.failed"
+    payload: RequestFailedPayload
+
+
 EVENT_SCHEMAS = {
     "item.created": ItemCreatedEvent,
     "item.updated": ItemUpdatedEvent,
     "item.withdrawn": ItemWithdrawnEvent,
     "match.potential_found": PotentialMatchEvent,
     "match.confirmed": ConfirmedMatchEvent,
+    "image.processed": ImageProcessedEvent,
+    "request.failed": RequestFailedEvent,
 }
 
 

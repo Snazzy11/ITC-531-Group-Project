@@ -1,5 +1,6 @@
 import enum
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
@@ -7,6 +8,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -73,24 +75,31 @@ class User(Base):
 class Location(Base):
     __tablename__ = "locations"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False, unique=True)
-    coordinates = Column(String(50), nullable=False)
-    description = Column(String(500))
-    is_active = Column(Boolean, nullable=False, server_default=true())
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    coordinates: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500))
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=true()
+    )
 
     items: Mapped[list[Item]] = relationship(back_populates="location")
 
 
 class Item(Base):
     __tablename__ = "items"
-    __table_args__ = (CheckConstraint("type IN (0, 1)", name="ck_items_type"),)
+    __table_args__ = (
+        CheckConstraint("type IN (0, 1)", name="ck_items_type"),
+        CheckConstraint(
+            "length(description) >= 50", name="ck_items_description_min_length"
+        ),
+    )
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    description = Column(String(1000))
-    type = Column(Integer, nullable=False, index=True)
-    status = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(String(1000), nullable=False)
+    type: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    status: Mapped[ItemStatus] = mapped_column(
         Enum(
             ItemStatus,
             name="item_status",
@@ -104,19 +113,19 @@ class Item(Base):
         server_default=ItemStatus.OPEN.value,
         index=True,
     )
-    location_id = Column(
+    location_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("locations.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
-    user_id = Column(
+    user_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     location = relationship("Location", back_populates="items")
@@ -251,4 +260,34 @@ class Match(Base):
     )
     found_item = relationship(
         "Item", foreign_keys=[found_item_id], back_populates="found_matches"
+    )
+
+
+class PotentialMatch(Base):
+    """A lost/found pair the with potential score."""
+
+    __tablename__ = "potential_matches"
+    __table_args__ = (
+        UniqueConstraint(
+            "lost_item_id", "found_item_id", name="uq_potential_matches_item_pair"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    lost_item_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    found_item_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Higher is better
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

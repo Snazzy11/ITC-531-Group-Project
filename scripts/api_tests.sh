@@ -19,10 +19,10 @@ USER="Authorization: Bearer $(login tester1 secret123)"
 curl -s $API/auth/me -H "$USER"
 
 curl -s -X POST $API/items -H "$JSON" -H "$USER" \
-  -d '{"name":"Blue keys","description":"carabiner, 3 keys","type":0,"location_id":1}'
+  -d '{"name":"Blue keys","description":"Three brass keys on a blue carabiner, lost near the library entrance","type":0,"location_id":1}'
 
 curl -s -X POST $API/items -H "$JSON" -H "$USER" \
-  -d '{"name":"Keyring","description":"found by the vending machines","type":1,"location_id":1}'
+  -d '{"name":"Keyring","description":"Keyring with a blue carabiner, found by the vending machines in the union","type":1,"location_id":1}'
 
 # Match an item and check its ID
 curl -s -X POST $API/matches -H "$JSON" -H "$USER" -d '{"lost_item_id":1,"found_item_id":2}'

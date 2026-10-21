@@ -32,7 +32,16 @@ def handle_message(channel, method, properties, body):
 
 
 def main():
-    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    # Fail now with a clear message rather than on the first event. The usual
+    # cause is an eventlogs volume made by an older image that ran as root;
+    # `docker compose down --volumes` recreates it.
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        LOG_FILE.touch()
+    except OSError as error:
+        log.error("Cannot write %s: %s", LOG_FILE, error)
+        raise SystemExit(1) from None
+    log.info("Writing events to %s", LOG_FILE)
     declare_logger_queue()
     connection = connect()
     try:

@@ -17,6 +17,7 @@ Copy `.env.local` and fill it in: `cp .env.local.example .env.local`
 | `BROKER_USER` & `BROKER_PASSWORD`      | Any username and password; compose creates that RabbitMQ user |
 | `JWT_SECRET`                           | Required. Signs login tokens. Generate one with `openssl rand -hex 32`. The app will not start without it |
 | `ADMIN_DISPLAY_NAME`, `ADMIN_PASSWORD` | Needed to use any admin route (managing locations, hard deletes, listing users). The app creates this admin account on startup. Display name up to 50 characters, password up to 72 bytes. See [Authentication](#authentication) |
+| `DEMO_USER_PASSWORD`                   | Optional. When set, a brand-new database is filled with demo data: users `alex-rivera`, `jordan-lee` and `sam-patel` (all sign in with this password), 3 locations, and 10 items, 2 of them matched, plus one matching job for the lost backpack. The list is in `app/demo_data.py`. 6 to 72 characters. Leave it empty to start with an empty database |
 
 Bring the container up and test it:
 ```sh
@@ -60,9 +61,10 @@ curl -X POST $API/users -H 'Content-Type: application/json' \
 USER="Authorization: Bearer $(login tester1 secret123)"
 curl $API/auth/me -H "$USER"       # shows who the token belongs to
 
-# 3. Post an item. The poster is whoever the token belongs to; do not send a user_id
+# 3. Post an item. The poster is whoever the token belongs to; do not send a user_id.
+#    description is required, 50 to 1000 characters
 curl -X POST $API/items -H "$USER" -H 'Content-Type: application/json' \
-  -d '{"name":"Blue umbrella","type":1,"location_id":1}'   # type: 0 = lost, 1 = found
+  -d '{"name":"Blue umbrella","description":"Black compact umbrella with a wooden handle, left in the library lobby","type":1,"location_id":1}'   # type: 0 = lost, 1 = found
 ```
 
 To add a photo or upload a file, see `milestones/milestone4/README.md`, which
@@ -70,15 +72,27 @@ has a runnable command for every endpoint.
 
 ## Tests
 
+For a guided test you run by hand, see `docs/WALKTHROUGH.md`. It posts a lost item, watches it get matched,
+confirms the match and runs an admin match search, with the output to expect at each step.
+
 With the stack running:
 
-- `scripts/api_tests.sh` is a curl walkthrough of the main flows. It signs in as the admin, so run it as `ADMIN_DISPLAY_NAME=... ADMIN_PASSWORD=... scripts/api_tests.sh` on a fresh stack.
+- `scripts/api_tests.sh` is a curl walkthrough of the main flows. It signs in as the admin, so run it as `ADMIN_DISPLAY_NAME=... ADMIN_PASSWORD=... scripts/api_tests.sh` on a fresh stack with `DEMO_USER_PASSWORD` empty (its ids assume no demo data).
 - `scripts/api_tester.py` checks every rule in the error contract. It wipes the
   database first.
   ```sh
   PYTHONPATH=app JWT_SECRET=$(openssl rand -hex 32) DATABASE_URL=postgresql+psycopg2://seekr:seekr-devonly@localhost:5432/seekr uv run --with httpx2 python scripts/api_tester.py
   ```
   It creates its own admin account and checks who is allowed to call what.
+- `scripts/smoke_test.sh` checks the running stack: `/health` through the gateway,
+  no service has exited, and a posted item's `item.created` event reaches the
+  logger's file. Run it as `ADMIN_DISPLAY_NAME=... ADMIN_PASSWORD=... scripts/smoke_test.sh`
+  (needs `jq`). CI runs the same script.
+
+Every event the services publish is written to `/app/logs/events.jsonl` by the
+`logger` service. Watch it with
+`docker compose --env-file .env.local exec logger tail -f /app/logs/events.jsonl`;
+`docs/MESSAGE_ARCHITECTURE.md` lists the events.
 
 # Authentication
 
@@ -124,7 +138,7 @@ If it cannot log in from there, get a token with the curl above and paste it in.
 | Anyone | `GET /health`, `POST /users`, `POST /auth/login`, every `GET` on items, locations, matches and item photo status |
 | Any signed-in user | `POST /items`, `POST /matches`, `DELETE /matches/{id}`, `GET /auth/me`, `POST /files`, `POST /files/batch`, `GET /files` (lists only your own files) |
 | The owner of the item or file, or an admin | `PATCH /items/{id}`, `PATCH /items/{id}/status`, `DELETE /items/{id}`, `POST /items/{id}/images` and `.../complete`, `GET /files/{id}`, `GET /files/{id}/content`, `DELETE /files/{id}` |
-| Admins only | `POST`, `PATCH` and `DELETE` on `/locations` (including restore and hard delete), `DELETE /items/{id}/hard`, `GET /users`, and the `user_id` filter on `GET /files` |
+| Admins only | `POST`, `PATCH` and `DELETE` on `/locations` (including restore and hard delete), `DELETE /items/{id}/hard`, `POST /items/{id}/match-search`, `GET /users`, and the `user_id` filter on `GET /files` |
 
 Item posters and file owners come from the token. `POST /items` and the file
 uploads no longer take a `user_id`.
@@ -185,7 +199,7 @@ owner 403, owner 200, admin 200), the admin-only `GET /users` (403 then 200), an
 | `GET /health`, gateway `/healthz` | Health probes and the compose healthcheck carry no token. They return only `{"status":"ok"}`, or 503 when the database is down, and no data |
 | `POST /users` | Registration has to be open to anyone. It can only ever create an account with the plain `user` role (a `roles` or `is_admin` field is a 422), and the password is hashed before it is stored |
 | `POST /auth/login` | It is how you get a token. It answers the same message and takes the same time for an unknown name and a wrong password. Known gap: there is no rate limit or lockout |
-| `GET /items`, `GET /items/{id}`, `GET /items/{id}/matches`, `GET /matches`, `GET /matches/{id}` | Browsing lost and found posts is the whole point of the app. A post holds a name, description, location and the poster's numeric id, and no contact details or other personal data. Anything that changes them needs a token |
+| `GET /items`, `GET /items/{id}`, `GET /items/{id}/matches`, `GET /items/{id}/potential-matches`, `GET /matches`, `GET /matches/{id}` | Browsing lost and found posts is the whole point of the app. A post holds a name, description, location and the poster's numeric id, and no contact details or other personal data. Anything that changes them needs a token |
 | `GET /locations`, `GET /locations/{id}`, `GET /locations/{id}/items` | Campus building names, which are public reference data. Only admins can change them |
 | `GET /items/{id}/images/{upload_id}` | Shows the processing status of a photo that is already visible on the public item. The `upload_id` is a random uuid, and the photo URLs it returns are time-limited presigned links |
 | `/docs`, `/redoc`, `/openapi.json` | They describe the API and contain no data. In a real deployment we would turn them off |
@@ -258,6 +272,10 @@ Uses Ruff to check for linting violations,
 Run Python tests and reports testing coverage.
 ## build
 Builds the container image, gated by the test.
+Then smoke-tests it: writes throwaway settings to `.env.local`, starts the gateway,
+API, workers, logger and notifier with `docker compose up --wait`, and runs
+`scripts/smoke_test.sh`. On failure it prints the service logs. The stack is
+always torn down at the end.
 
 # Dashboard
 The Grafana dashboard is reachable from http://localhost:3000

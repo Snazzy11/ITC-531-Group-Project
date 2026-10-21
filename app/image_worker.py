@@ -6,13 +6,15 @@ import image_processing
 from database.database import SessionLocal
 from database.models import ImageStatus
 from image_processing import Rejected
-from messaging import IMAGE_QUEUE, connect
+from messaging import IMAGE_QUEUE, connect, emit_event
 from ports import storage
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logging.getLogger("pika").setLevel(logging.WARNING)
 logging.getLogger("botocore").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
+
+SOURCE = "image-worker"
 
 
 def handle_message(channel, method, properties, body):
@@ -57,6 +59,16 @@ def process(item_id: int, upload_id: str) -> None:
             crud.mark_image_rejected(db, image, str(reason))
             storage.delete(pending)
             log.info("Rejected upload %s for item %s: %s", upload_id, item_id, reason)
+            emit_event(
+                "image.processed",
+                {
+                    "item_id": item_id,
+                    "upload_id": upload_id,
+                    "status": "rejected",
+                    "reject_reason": str(reason),
+                },
+                source=SOURCE,
+            )
             return
 
         key = storage.photo_key(item_id, upload_id)
@@ -65,6 +77,11 @@ def process(item_id: int, upload_id: str) -> None:
             storage.delete(old_key)
         storage.delete(pending)
         log.info("Stored %s (%s, %d bytes in)", key, content_type, len(data))
+        emit_event(
+            "image.processed",
+            {"item_id": item_id, "upload_id": upload_id, "status": "ready"},
+            source=SOURCE,
+        )
 
 
 def main():

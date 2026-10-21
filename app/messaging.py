@@ -32,7 +32,7 @@ def declare_matching_queue() -> None:
     try:
         channel = connection.channel()
         channel.queue_declare(queue=MATCHING_QUEUE, durable=True)
-        print(f"Declared durable queue: {MATCHING_QUEUE}")
+        log.info("Declared durable queue: %s", MATCHING_QUEUE)
     finally:
         connection.close()
 
@@ -56,7 +56,7 @@ def publish_matching_job(item_id: int) -> None:
             ),
             mandatory=True,
         )
-        print(f"Published matching job for item {item_id}")
+        log.info("Published matching job for item %s", item_id)
     finally:
         connection.close()
 
@@ -66,7 +66,7 @@ def declare_image_queue() -> None:
     try:
         channel = connection.channel()
         channel.queue_declare(queue=IMAGE_QUEUE, durable=True)
-        print(f"Declared durable queue: {IMAGE_QUEUE}")
+        log.info("Declared durable queue: %s", IMAGE_QUEUE)
     finally:
         connection.close()
 
@@ -94,7 +94,7 @@ def publish_image_job(item_id: int, image_ref: str) -> None:
             ),
             mandatory=True,
         )
-        print(f"Published image job for item {item_id}")
+        log.info("Published image job for item %s", item_id)
     finally:
         connection.close()
 
@@ -108,7 +108,7 @@ def declare_event_exchange() -> None:
             exchange_type="topic",
             durable=True,
         )
-        print(f"Declared durable topic exchange: {EVENT_EXCHANGE}")
+        log.info("Declared durable topic exchange: %s", EVENT_EXCHANGE)
     finally:
         connection.close()
 
@@ -140,7 +140,7 @@ def publish_event(
             ),
             mandatory=True,
         )
-        print(f"Published event {event_type}: {event_id}")
+        log.info("Published event %s: %s", event_type, event_id)
         return event_id
     finally:
         connection.close()
@@ -161,7 +161,7 @@ def declare_logger_queue() -> None:
             exchange=EVENT_EXCHANGE,
             routing_key="#",
         )
-        print(f"Declared logger queue: {LOGGER_QUEUE}, bound to {EVENT_EXCHANGE}")
+        log.info("Declared logger queue: %s, bound to %s", LOGGER_QUEUE, EVENT_EXCHANGE)
     finally:
         connection.close()
 
@@ -182,23 +182,49 @@ def declare_notifier_queue() -> None:
                 exchange=EVENT_EXCHANGE,
                 routing_key=routing_key,
             )
-        print(f"Declared notifier queue: {NOTIFIER_QUEUE}")
+        log.info("Declared notifier queue: %s", NOTIFIER_QUEUE)
     finally:
         connection.close()
 
 
+def prepare_event_queues() -> None:
+    """Best-effort, at API startup. Declares the logger's and notifier's queues
+    so that events published before those services first start are kept
+    instead of being dropped as unroutable."""
+    try:
+        declare_logger_queue()
+        declare_notifier_queue()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not declare the event queues: %s", exc)
+
+
+def emit_event(event_type: str, payload: dict, source: str = "campus-seekr-api") -> None:
+    """Events are notifications, not part of the change itself, so a broker
+    outage is logged and the caller carries on."""
+    try:
+        publish_event(event_type, payload, source)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not publish %s %s: %s", event_type, payload, exc)
+
+
+def emit(event_type: str, item_id: int) -> None:
+    """emit_event() for the item.* events, whose payload is just the id."""
+    emit_event(event_type, {"item_id": item_id})
+
+
+def queue_matching(item_id: int) -> None:
+    """Best-effort like emit(): a broker outage is logged and the change still
+    succeeds. An admin can re-run it with POST /items/{id}/match-search."""
+    try:
+        publish_matching_job(item_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not queue matching for item %s: %s", item_id, exc)
+
+
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     declare_matching_queue()
     declare_image_queue()
     declare_event_exchange()
     declare_logger_queue()
     declare_notifier_queue()
-
-
-def emit(event_type: str, item_id: int) -> None:
-    """Events are notifications, not part of the change itself, so a broker
-    outage is logged and the request still succeeds."""
-    try:
-        publish_event(event_type, {"item_id": item_id})
-    except Exception as exc:  # noqa: BLE001
-        log.warning("could not publish %s for item %s: %s", event_type, item_id, exc)

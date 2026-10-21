@@ -1,16 +1,6 @@
 """Request and response schemas.
 
-Two deliberate departures from the draft you sent:
-
-1. `ItemResponse` does not inherit the request-side `description: str`
-   constraint. The column is nullable, so a row with a NULL description would
-   fail *response* validation and turn a healthy GET into a 500. Here
-   `description` is optional in the shared base, which is safe in both
-   directions.
-2. `status` is typed as the real `ItemStatus` enum, not a Literal of strings.
-   Reading from the ORM yields an enum member, and `str`-Enum members hash by
-   name ("OPEN"), not value ("open"), so Literal matching is a footgun. The
-   JSON on the wire is identical: "open", "matched", ...
+An item `description` is required.
 
 `extra="forbid"` on the request models is optional but cheap insurance: a
 client that POSTs {"nmae": ...} gets a 422 instead of silently creating an
@@ -21,7 +11,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from database.models import ImageStatus, ItemStatus
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 REQUEST = ConfigDict(extra="forbid", str_strip_whitespace=True)
 RESPONSE = model_config = ConfigDict(from_attributes=True)
@@ -32,7 +22,7 @@ RESPONSE = model_config = ConfigDict(from_attributes=True)
 
 class ItemBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    description: str | None = Field(default=None, max_length=1000)
+    description: str = Field(min_length=50, max_length=1000)
     location_id: int = Field(gt=0)
 
 
@@ -48,8 +38,17 @@ class ItemUpdate(BaseModel):
     # `type` is absent on purpose: flipping lost <-> found would invalidate any
     # match the item belongs to. Withdraw and repost instead.
     name: str | None = Field(default=None, min_length=1, max_length=100)
-    description: str | None = Field(default=None, max_length=1000)
+    description: str | None = Field(default=None, min_length=50, max_length=1000)
     location_id: int | None = Field(default=None, gt=0)
+
+    # Omitting description leaves it as is; an explicit null would clear a
+    # required column, so it gets a 422 here instead of a database error.
+    @field_validator("description")
+    @classmethod
+    def description_not_null(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("description cannot be null")
+        return value
 
 
 class ItemStatusUpdate(BaseModel):
@@ -88,6 +87,21 @@ class MatchResponse(BaseModel):
     lost_item_id: int
     found_item_id: int
     created_at: datetime
+
+
+class PotentialMatchResponse(BaseModel):
+    model_config = RESPONSE
+
+    lost_item_id: int
+    found_item_id: int
+    # Higher is better. No upper limit: it grows with the number of shared words.
+    score: float
+    created_at: datetime
+
+
+class MatchSearchResponse(BaseModel):
+    item_id: int
+    status: Literal["queued"] = "queued"
 
 
 # locations

@@ -40,6 +40,7 @@ def create_item(
         raise APIError(409, errors.LOCATION_INACTIVE, "that location has been retired")
     row = crud.create_item(db, item, user.id)
     messaging.emit("item.created", row.id)
+    messaging.queue_matching(row.id)
     return presenters.item_out(row)
 
 
@@ -162,6 +163,8 @@ def update_item_status(
     item = crud.set_item_status(db, item, new_status)
     withdrawn = new_status is models.ItemStatus.WITHDRAWN
     messaging.emit("item.withdrawn" if withdrawn else "item.updated", item.id)
+    if new_status is models.ItemStatus.OPEN:
+        messaging.queue_matching(item.id)
     return presenters.item_out(item)
 
 

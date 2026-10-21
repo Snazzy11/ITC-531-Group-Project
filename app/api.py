@@ -10,20 +10,26 @@ import uuid
 from contextlib import asynccontextmanager
 
 import crud
+import demo_data
+import messaging
 from database.database import Base, SessionLocal, engine
 from errors import register_error_handlers
 from fastapi import FastAPI, Request
 from ports import storage
-from routers import auth, files, images, items, locations, matches, meta, users
 from prometheus_client import Counter, make_asgi_app
+from routers import auth, files, images, items, locations, matches, meta, users
 
 logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     storage.ensure_bucket()
+    messaging.prepare_event_queues()
     with SessionLocal() as db:
         crud.seed_auth(db, os.getenv("ADMIN_DISPLAY_NAME"), os.getenv("ADMIN_PASSWORD"))
+        # Only fills a brand-new database; see demo_data.py
+        if demo_password := os.getenv("DEMO_USER_PASSWORD"):
+            demo_data.seed(db, demo_password)
     yield
 
 
