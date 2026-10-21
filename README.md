@@ -18,6 +18,18 @@ Copy `.env.local` and fill it in: `cp .env.local.example .env.local`
 | `JWT_SECRET`                           | Required. Signs login tokens. Generate one with `openssl rand -hex 32`. The app will not start without it |
 | `ADMIN_DISPLAY_NAME`, `ADMIN_PASSWORD` | Needed to use any admin route (managing locations, hard deletes, listing users). The app creates this admin account on startup. Display name up to 50 characters, password up to 72 bytes. See [Authentication](#authentication) |
 | `DEMO_USER_PASSWORD`                   | Optional. When set, a brand-new database is filled with demo data: users `alex-rivera`, `jordan-lee` and `sam-patel` (all sign in with this password), 3 locations, and 10 items, 2 of them matched, plus one matching job for the lost backpack. The list is in `app/demo_data.py`. 6 to 72 characters. Leave it empty to start with an empty database |
+| `RABBITMQ_TAG`                         | Required. The RabbitMQ image tag. Keep the one in `.env.local.example` (`3.13.7-management-alpine`) |
+| `GRAFANA_USER`, `GRAFANA_PASSWORD`     | Required. The Grafana admin login; see [Dashboard](#dashboard) |
+| `S3_ENDPOINT_URL`                      | Where the API and image worker reach the object store. For the local store in `compose.yml`: `http://storage:9000`. Unset means AWS's own S3 endpoint |
+| `S3_PUBLIC_ENDPOINT_URL`               | The address presigned photo URLs are signed for, which the client must be able to reach. Locally: `http://localhost:9000`. Leave it empty when it's the same as `S3_ENDPOINT_URL` |
+| `S3_BUCKET`                            | Required. The bucket name. The API creates it on startup if it doesn't exist |
+| `AWS_DEFAULT_REGION`                   | The bucket's region. The local store accepts any value |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | The object store's key pair. For the local store: `seekr` and `seekr-devonly`, the local development keys set on the `storage` service in `compose.yml` |
+| `S3_PORT`, `PROMETHEUS_PORT`, `GRAFANA_PORT` | Optional. Host ports for the local store, Prometheus and Grafana, if the defaults 9000, 9090 and 3000 are taken |
+
+`compose.yml` sets two more itself, so you don't put them in `.env.local`: `DATABASE_URL` (the `db` service, with
+its local development password `seekr-devonly`) and `BROKER_HOST` (`broker`). For a cloud deployment, the full list of
+what the app reads is in `adapters/aws.env.example`; see [Deploying](#deploying).
 
 Bring the container up and test it:
 ```sh
@@ -36,6 +48,8 @@ this: `users.is_admin` is gone and the `roles` tables are new.)
 | http://localhost:8000/api/v1 | The API |
 | http://localhost:15672 | RabbitMQ dashboard (log in with your broker user) |
 | http://localhost:9000 | Local S3 API (RustFS), where photos are stored |
+| http://localhost:3000 | Grafana dashboard; see [Dashboard](#dashboard) |
+| http://localhost:9090 | Prometheus |
 
 ## First requests
 
@@ -277,6 +291,32 @@ API, workers, logger and notifier with `docker compose up --wait`, and runs
 `scripts/smoke_test.sh`. On failure it prints the service logs. The stack is
 always torn down at the end.
 
+# Deploying
+CI builds the image but doesn't push or deploy it; the comment on `push: false` in `.github/workflows/ci.yml` says
+why. We deploy to AWS (ECS behind API Gateway) by hand with our adapter, `adapters/aws.sh`.
+`milestones/milestone6/README.md` has a full run with its output.
+
+1. Copy `adapters/aws.env.example` to `adapters/aws.env` and fill it in. The app's own settings (database, JWT secret,
+   broker, bucket) go in the ECS task definition, not in this file. The example lists them all.
+2. Build the image, tagged with the full commit SHA:
+   ```sh
+   set -a; source adapters/aws.env; set +a
+   docker build --platform linux/amd64 -t "$IMAGE_REF" .
+   ```
+3. Deploy. `adapter_deploy` pushes the image to ECR if it isn't there yet, rolls the ECS service onto it, checks
+   `/health`, and prints the service URL on its last line:
+   ```sh
+   source adapters/aws.sh
+   adapter_deploy
+   ```
+4. Audit, and tear down when you're done. `cloud-audit.sh` and `cloud-down.sh` come from the course's Module 7
+   folder; copy them into `scripts/` first.
+   ```sh
+   bash scripts/cloud-audit.sh aws    # what exists
+   bash scripts/cloud-down.sh aws     # destroy it
+   bash scripts/cloud-audit.sh aws    # should print CLEAN
+   ```
+
 # Dashboard
 The Grafana dashboard is reachable from http://localhost:3000. Sign in with `GRAFANA_USER` and `GRAFANA_PASSWORD`
 from `.env.local`. Prometheus itself is at http://localhost:9090.
@@ -298,6 +338,12 @@ Doug was initially unable to get the project to build after adding the code for 
 Initial deployment kep giving 404 codes due to only having a "/health" route and lacking a "/" route.
 ## Parker
 Because we generate the requirements.txt with UV, the requirements state the hashes of the release instead of just the version. For Pillow specifically, it was throwing errors because it could not get the right version. Parker first tried building it from source in the CI script, but the runner had outdated dependencies. Parker ended up enclosing that from the dependencies with an extra flag in the pip command, and we will not need to run any tests using Pillow in the future.
+
+After rebuilding the stack, every request through `localhost:8000` returned 503 `SERVICE_UNAVAILABLE`, even though `docker compose ps` showed the API healthy and its own health checks passing. The 503 came from the gateway, not the API: nginx looked up the `app` container's address once at startup, and `up --build` had recreated the API container at a new address. The fix was to make nginx look the address up again every 10 seconds through Docker's DNS (`resolve` in the upstream block of `gateway.conf`).
+
+The API refused to start with a "no credentials" error from boto3. The S3 settings in `.env.local.example` used names the code never reads (`S3_ENDPOINT`, `S3_REGION`), so the real keys were never set and boto3 would have talked to Amazon instead of the local store anyway. The fix was renaming them to what `app/ports/storage.py` reads (`S3_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, and so on) and filling in the keys.
+
+CI failed starting the stack with `container campus-seekr-notifier-1 has no healthcheck configured`. The workers turn off the image's health check (it calls the API, which they don't run), and the older Docker Compose on GitHub's runners rejects `--wait` for such containers, while newer versions just wait for them to be running. The fix was waiting only for the gateway and API, starting the workers separately, and having `scripts/smoke_test.sh` check that none of them exited.
 
 # Design docs
 - `docs/Architecture.drawio.html` - the services, the store, and the presigned path
