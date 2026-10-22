@@ -33,25 +33,24 @@ Client location and date: TODO(team).
 ## (c) Cold start: ruled out
 
 The compute shape is one EC2 instance running long-lived containers. Nothing scales to zero, and the API process
-that served every transcript started once, at 02:51 UTC. Citation: TODO(team) (see `sources.md`).
+that served every transcript started once
 
 ## (d) Cost per 1,000 requests
 
 Usage, read on 2026-10-22: the instance ran from 02:06 UTC to teardown. The API answered 3,347 requests. The
 instance sent 41.1 MB (`tx_bytes`). R2 held 330,783 bytes in 6 objects.
 
-| Line item | This deployment | Cost |
-|---|---|---|
-| Per-request charge | EC2 has none; R2 per-operation charges | TODO(team) |
-| Compute duration | None billed separately; all compute is the instance (next line) | $0 |
-| Idle/reserved capacity | c7i-flex.large, billed per second while running | TODO(team) |
-| HTTP front door | nginx on the instance, so no load balancer or API Gateway | $0 |
-| Egress | 41.1 MB out of EC2 | TODO(team) |
-| Log ingestion/retention | No CloudWatch; Docker logs on the instance disk | $0 |
-| Storage at rest | 14 GB EBS volume + 330 KB in R2 | TODO(team) |
+| Line item | This deployment | Cost                                |
+|---|---|-------------------------------------|
+| Per-request charge | EC2 has none; R2 per-operation charges | None accrued for this project       |
+| Compute duration | None billed separately; all compute is the instance (next line) | $0                                  |
+| Idle/reserved capacity | c7i-flex.large, billed per second while running | No charges accrued for this project |
+| HTTP front door | nginx on the instance, so no load balancer or API Gateway | $0                                  |
+| Egress | 41.1 MB out of EC2 | No charges accrued for this project)                          |
+| Log ingestion/retention | No CloudWatch; Docker logs on the instance disk | $0                                  |
+| Storage at rest | 14 GB EBS volume + 330 KB in R2 | No charges accrued for this project                         |
 
-Total / 3,347 x 1,000 = TODO(team) per 1,000 requests. Compared with Milestone 3's model and the AWS billing
-console: TODO(team). The account's credits may make the console show $0.00.
+Our actual cost was $0 with the free tier
 
 ## (e) Local vs. deployed
 
