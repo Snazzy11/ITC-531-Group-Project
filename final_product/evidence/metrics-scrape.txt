@@ -1,0 +1,208 @@
+Raw /metrics/ output from the deployed service, deployed commit f5cea42.
+Scraped 2026-10-22 03:04:42 UTC from outside AWS:
+$ curl -s http://18.222.255.231:8000/api/v1/metrics/
+The API container was started by adapter_deploy at 2026-10-22 02:51 UTC, so every count below is
+traffic since then: the evidence transcripts and one load run (03:01:52-03:02:35 UTC).
+----------------------------------------------------------------------------------------------
+# HELP python_gc_objects_collected_total Objects collected during gc
+# TYPE python_gc_objects_collected_total counter
+python_gc_objects_collected_total{generation="0"} 94651.0
+python_gc_objects_collected_total{generation="1"} 19873.0
+python_gc_objects_collected_total{generation="2"} 2705.0
+# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC
+# TYPE python_gc_objects_uncollectable_total counter
+python_gc_objects_uncollectable_total{generation="0"} 0.0
+python_gc_objects_uncollectable_total{generation="1"} 0.0
+python_gc_objects_uncollectable_total{generation="2"} 0.0
+# HELP python_gc_collections_total Number of times this generation was collected
+# TYPE python_gc_collections_total counter
+python_gc_collections_total{generation="0"} 291.0
+python_gc_collections_total{generation="1"} 26.0
+python_gc_collections_total{generation="2"} 2.0
+# HELP python_info Python platform information
+# TYPE python_info gauge
+python_info{implementation="CPython",major="3",minor="14",patchlevel="7",version="3.14.7"} 1.0
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 1.247363072e+09
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 1.52633344e+08
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.79263748049e+09
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 48.46
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 18.0
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 1024.0
+# HELP seekr_items_posted_total Items posted, by lost or found
+# TYPE seekr_items_posted_total counter
+seekr_items_posted_total{type="lost"} 153.0
+seekr_items_posted_total{type="found"} 153.0
+# HELP seekr_items_posted_created Items posted, by lost or found
+# TYPE seekr_items_posted_created gauge
+seekr_items_posted_created{type="lost"} 1.7926374817490492e+09
+seekr_items_posted_created{type="found"} 1.79263748174906e+09
+# HELP seekr_matches_confirmed_total Lost/found pairs confirmed as a match
+# TYPE seekr_matches_confirmed_total counter
+seekr_matches_confirmed_total 2.0
+# HELP seekr_matches_confirmed_created Lost/found pairs confirmed as a match
+# TYPE seekr_matches_confirmed_created gauge
+seekr_matches_confirmed_created 1.7926374817490232e+09
+# HELP seekr_requests_total Requests
+# TYPE seekr_requests_total counter
+seekr_requests_total{method="GET",route="/health",status="200"} 258.0
+seekr_requests_total{method="GET",route="__unmatched__",status="200"} 55.0
+seekr_requests_total{method="POST",route="/auth/login",status="200"} 319.0
+seekr_requests_total{method="GET",route="/auth/me",status="200"} 3.0
+seekr_requests_total{method="POST",route="/users",status="422"} 2.0
+seekr_requests_total{method="POST",route="/users",status="409"} 2.0
+seekr_requests_total{method="POST",route="/auth/login",status="401"} 4.0
+seekr_requests_total{method="GET",route="/users",status="401"} 6.0
+seekr_requests_total{method="GET",route="/users",status="403"} 2.0
+seekr_requests_total{method="GET",route="/users",status="200"} 2.0
+seekr_requests_total{method="GET",route="/auth/me",status="401"} 2.0
+seekr_requests_total{method="POST",route="/locations",status="201"} 2.0
+seekr_requests_total{method="POST",route="/locations",status="409"} 1.0
+seekr_requests_total{method="POST",route="/locations",status="403"} 1.0
+seekr_requests_total{method="POST",route="/locations",status="422"} 1.0
+seekr_requests_total{method="GET",route="/locations",status="200"} 1.0
+seekr_requests_total{method="GET",route="/locations/{location_id}",status="200"} 1.0
+seekr_requests_total{method="GET",route="/locations/{location_id}",status="404"} 2.0
+seekr_requests_total{method="PATCH",route="/locations/{location_id}",status="200"} 1.0
+seekr_requests_total{method="PATCH",route="/locations/{location_id}",status="422"} 1.0
+seekr_requests_total{method="DELETE",route="/locations/{location_id}",status="204"} 1.0
+seekr_requests_total{method="POST",route="/items",status="409"} 1.0
+seekr_requests_total{method="POST",route="/locations/{location_id}/restore",status="200"} 1.0
+seekr_requests_total{method="DELETE",route="/locations/{location_id}/hard",status="204"} 1.0
+seekr_requests_total{method="DELETE",route="/locations/{location_id}/hard",status="409"} 1.0
+seekr_requests_total{method="POST",route="/items",status="201"} 306.0
+seekr_requests_total{method="POST",route="/items",status="422"} 1.0
+seekr_requests_total{method="POST",route="/items",status="404"} 1.0
+seekr_requests_total{method="POST",route="/items",status="401"} 1.0
+seekr_requests_total{method="GET",route="/items",status="200"} 2002.0
+seekr_requests_total{method="GET",route="/items/{item_id}",status="200"} 4.0
+seekr_requests_total{method="GET",route="/items/{item_id}",status="404"} 2.0
+seekr_requests_total{method="PATCH",route="/items/{item_id}",status="200"} 1.0
+seekr_requests_total{method="PATCH",route="/items/{item_id}",status="403"} 1.0
+seekr_requests_total{method="PATCH",route="/items/{item_id}/status",status="409"} 1.0
+seekr_requests_total{method="DELETE",route="/items/{item_id}",status="204"} 2.0
+seekr_requests_total{method="DELETE",route="/items/{item_id}/hard",status="403"} 1.0
+seekr_requests_total{method="DELETE",route="/items/{item_id}/hard",status="204"} 1.0
+seekr_requests_total{method="POST",route="/matches",status="201"} 2.0
+seekr_requests_total{method="POST",route="/matches",status="409"} 1.0
+seekr_requests_total{method="POST",route="/matches",status="422"} 2.0
+seekr_requests_total{method="POST",route="/matches",status="401"} 1.0
+seekr_requests_total{method="GET",route="/matches/{match_id}",status="200"} 1.0
+seekr_requests_total{method="GET",route="/items/{item_id}/matches",status="200"} 1.0
+seekr_requests_total{method="GET",route="/matches/{match_id}",status="404"} 2.0
+seekr_requests_total{method="DELETE",route="/items/{item_id}/hard",status="409"} 1.0
+seekr_requests_total{method="DELETE",route="/matches/{match_id}",status="204"} 1.0
+seekr_requests_total{method="GET",route="/matches",status="200"} 1.0
+seekr_requests_total{method="PATCH",route="/users/{user_id}",status="200"} 2.0
+seekr_requests_total{method="PATCH",route="/users/{user_id}",status="403"} 1.0
+seekr_requests_total{method="PATCH",route="/users/{user_id}",status="409"} 1.0
+seekr_requests_total{method="PATCH",route="/users/{user_id}",status="404"} 1.0
+seekr_requests_total{method="POST",route="/items/{item_id}/images",status="201"} 107.0
+seekr_requests_total{method="POST",route="/items/{item_id}/images/{upload_id}/complete",status="409"} 2.0
+seekr_requests_total{method="POST",route="/items/{item_id}/images",status="403"} 2.0
+seekr_requests_total{method="POST",route="/items/{item_id}/images/{upload_id}/complete",status="202"} 107.0
+seekr_requests_total{method="GET",route="/items/{item_id}/images/{upload_id}",status="200"} 23.0
+seekr_requests_total{method="GET",route="/items/{item_id}/images/{upload_id}",status="404"} 2.0
+seekr_requests_total{method="POST",route="/files",status="201"} 2.0
+seekr_requests_total{method="GET",route="/files",status="200"} 2.0
+seekr_requests_total{method="GET",route="/files/{file_id}",status="200"} 2.0
+seekr_requests_total{method="GET",route="/files/{file_id}/content",status="200"} 2.0
+seekr_requests_total{method="POST",route="/files",status="401"} 2.0
+seekr_requests_total{method="GET",route="/files/{file_id}",status="403"} 2.0
+seekr_requests_total{method="POST",route="/files",status="400"} 2.0
+seekr_requests_total{method="POST",route="/files",status="413"} 2.0
+seekr_requests_total{method="POST",route="/files/batch",status="413"} 2.0
+seekr_requests_total{method="GET",route="/files/{file_id}",status="404"} 4.0
+seekr_requests_total{method="DELETE",route="/files/{file_id}",status="204"} 2.0
+seekr_requests_total{method="GET",route="/items/{item_id}/potential-matches",status="200"} 1.0
+seekr_requests_total{method="POST",route="/items/{item_id}/match-search",status="202"} 1.0
+seekr_requests_total{method="POST",route="/items/{item_id}/match-search",status="403"} 1.0
+seekr_requests_total{method="POST",route="/items/{item_id}/match-search",status="404"} 1.0
+seekr_requests_total{method="POST",route="/items/{item_id}/match-search",status="409"} 1.0
+# HELP seekr_requests_created Requests
+# TYPE seekr_requests_created gauge
+seekr_requests_created{method="GET",route="/health",status="200"} 1.79263748599616e+09
+seekr_requests_created{method="GET",route="__unmatched__",status="200"} 1.7926374934759257e+09
+seekr_requests_created{method="POST",route="/auth/login",status="200"} 1.792637605191693e+09
+seekr_requests_created{method="GET",route="/auth/me",status="200"} 1.7926376053413506e+09
+seekr_requests_created{method="POST",route="/users",status="422"} 1.7926376054354877e+09
+seekr_requests_created{method="POST",route="/users",status="409"} 1.7926376055705397e+09
+seekr_requests_created{method="POST",route="/auth/login",status="401"} 1.7926376058281562e+09
+seekr_requests_created{method="GET",route="/users",status="401"} 1.7926376060116858e+09
+seekr_requests_created{method="GET",route="/users",status="403"} 1.7926376060713482e+09
+seekr_requests_created{method="GET",route="/users",status="200"} 1.7926376061359942e+09
+seekr_requests_created{method="GET",route="/auth/me",status="401"} 1.7926376063075001e+09
+seekr_requests_created{method="POST",route="/locations",status="201"} 1.7926377111314223e+09
+seekr_requests_created{method="POST",route="/locations",status="409"} 1.792637711199055e+09
+seekr_requests_created{method="POST",route="/locations",status="403"} 1.7926377112617068e+09
+seekr_requests_created{method="POST",route="/locations",status="422"} 1.7926377113230512e+09
+seekr_requests_created{method="GET",route="/locations",status="200"} 1.792637711379922e+09
+seekr_requests_created{method="GET",route="/locations/{location_id}",status="200"} 1.7926377114408839e+09
+seekr_requests_created{method="GET",route="/locations/{location_id}",status="404"} 1.792637711500147e+09
+seekr_requests_created{method="PATCH",route="/locations/{location_id}",status="200"} 1.7926377115614212e+09
+seekr_requests_created{method="PATCH",route="/locations/{location_id}",status="422"} 1.7926377116273882e+09
+seekr_requests_created{method="DELETE",route="/locations/{location_id}",status="204"} 1.792637711692512e+09
+seekr_requests_created{method="POST",route="/items",status="409"} 1.7926377117475471e+09
+seekr_requests_created{method="POST",route="/locations/{location_id}/restore",status="200"} 1.7926377118093488e+09
+seekr_requests_created{method="DELETE",route="/locations/{location_id}/hard",status="204"} 1.7926377119405444e+09
+seekr_requests_created{method="DELETE",route="/locations/{location_id}/hard",status="409"} 1.79263771205653e+09
+seekr_requests_created{method="POST",route="/items",status="201"} 1.7926377121524684e+09
+seekr_requests_created{method="POST",route="/items",status="422"} 1.7926377122175379e+09
+seekr_requests_created{method="POST",route="/items",status="404"} 1.792637712283296e+09
+seekr_requests_created{method="POST",route="/items",status="401"} 1.7926377123399377e+09
+seekr_requests_created{method="GET",route="/items",status="200"} 1.7926377124040327e+09
+seekr_requests_created{method="GET",route="/items/{item_id}",status="200"} 1.7926377124649246e+09
+seekr_requests_created{method="GET",route="/items/{item_id}",status="404"} 1.7926377125247169e+09
+seekr_requests_created{method="PATCH",route="/items/{item_id}",status="200"} 1.79263771262735e+09
+seekr_requests_created{method="PATCH",route="/items/{item_id}",status="403"} 1.7926377126952598e+09
+seekr_requests_created{method="PATCH",route="/items/{item_id}/status",status="409"} 1.792637712765313e+09
+seekr_requests_created{method="DELETE",route="/items/{item_id}",status="204"} 1.7926377128566723e+09
+seekr_requests_created{method="DELETE",route="/items/{item_id}/hard",status="403"} 1.7926377130387383e+09
+seekr_requests_created{method="DELETE",route="/items/{item_id}/hard",status="204"} 1.7926377131075714e+09
+seekr_requests_created{method="POST",route="/matches",status="201"} 1.7926377135255978e+09
+seekr_requests_created{method="POST",route="/matches",status="409"} 1.7926377135943453e+09
+seekr_requests_created{method="POST",route="/matches",status="422"} 1.7926377136538143e+09
+seekr_requests_created{method="POST",route="/matches",status="401"} 1.7926377137810862e+09
+seekr_requests_created{method="GET",route="/matches/{match_id}",status="200"} 1.7926377138426313e+09
+seekr_requests_created{method="GET",route="/items/{item_id}/matches",status="200"} 1.7926377139020643e+09
+seekr_requests_created{method="GET",route="/matches/{match_id}",status="404"} 1.792637713962774e+09
+seekr_requests_created{method="DELETE",route="/items/{item_id}/hard",status="409"} 1.7926377140272577e+09
+seekr_requests_created{method="DELETE",route="/matches/{match_id}",status="204"} 1.792637714125479e+09
+seekr_requests_created{method="GET",route="/matches",status="200"} 1.7926377143812451e+09
+seekr_requests_created{method="PATCH",route="/users/{user_id}",status="200"} 1.7926377145156124e+09
+seekr_requests_created{method="PATCH",route="/users/{user_id}",status="403"} 1.7926377145778046e+09
+seekr_requests_created{method="PATCH",route="/users/{user_id}",status="409"} 1.79263771464114e+09
+seekr_requests_created{method="PATCH",route="/users/{user_id}",status="404"} 1.7926377147044525e+09
+seekr_requests_created{method="POST",route="/items/{item_id}/images",status="201"} 1.7926377606953726e+09
+seekr_requests_created{method="POST",route="/items/{item_id}/images/{upload_id}/complete",status="409"} 1.7926377608380678e+09
+seekr_requests_created{method="POST",route="/items/{item_id}/images",status="403"} 1.792637760903803e+09
+seekr_requests_created{method="POST",route="/items/{item_id}/images/{upload_id}/complete",status="202"} 1.7926377615906281e+09
+seekr_requests_created{method="GET",route="/items/{item_id}/images/{upload_id}",status="200"} 1.792637761644525e+09
+seekr_requests_created{method="GET",route="/items/{item_id}/images/{upload_id}",status="404"} 1.7926377648165207e+09
+seekr_requests_created{method="POST",route="/files",status="201"} 1.7926377651805675e+09
+seekr_requests_created{method="GET",route="/files",status="200"} 1.7926377652509599e+09
+seekr_requests_created{method="GET",route="/files/{file_id}",status="200"} 1.792637765313277e+09
+seekr_requests_created{method="GET",route="/files/{file_id}/content",status="200"} 1.7926377654866958e+09
+seekr_requests_created{method="POST",route="/files",status="401"} 1.7926377657503014e+09
+seekr_requests_created{method="GET",route="/files/{file_id}",status="403"} 1.792637765813583e+09
+seekr_requests_created{method="POST",route="/files",status="400"} 1.792637765877525e+09
+seekr_requests_created{method="POST",route="/files",status="413"} 1.7926377670347526e+09
+seekr_requests_created{method="POST",route="/files/batch",status="413"} 1.7926377671279418e+09
+seekr_requests_created{method="GET",route="/files/{file_id}",status="404"} 1.7926377671892323e+09
+seekr_requests_created{method="DELETE",route="/files/{file_id}",status="204"} 1.7926377697748003e+09
+seekr_requests_created{method="GET",route="/items/{item_id}/potential-matches",status="200"} 1.7926379402132528e+09
+seekr_requests_created{method="POST",route="/items/{item_id}/match-search",status="202"} 1.7926379402916214e+09
+seekr_requests_created{method="POST",route="/items/{item_id}/match-search",status="403"} 1.7926379403547041e+09
+seekr_requests_created{method="POST",route="/items/{item_id}/match-search",status="404"} 1.7926379404223762e+09
+seekr_requests_created{method="POST",route="/items/{item_id}/match-search",status="409"} 1.7926379404911797e+09

@@ -8,3 +8,5 @@ __pycache__/
 milestone4.zip
 useful_files
 useful_files_for_claude
+*.pem
+final_product_*.zip

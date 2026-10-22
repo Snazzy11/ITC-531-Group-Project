@@ -1,0 +1,452 @@
+Object storage: Cloudflare R2 over the S3 API (SigV4, endpoint_url), deployed commit f5cea42.
+Captured 2026-10-22 02:56 UTC. API calls go through the public gateway at http://18.222.255.231:8000/api/v1.
+Presigned PUT/GET requests go straight from this client to R2, not through the API.
+Bearer tokens and the X-Amz-Credential / X-Amz-Signature values are <redacted>.
+Local files used: bottle-photo.png (PNG, 1600x1200, 144,564 bytes), receipt-scan.png
+(PNG, 400x300, 123,071 bytes), not-an-image.txt (a shell script, 51 bytes), too-big.bin
+(11 MiB of random bytes).
+
+# A. A photo for lost item 15, by presigned URL. The API hands out the URL and never touches the bytes
+
+[2026-10-22T02:56:42Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/15/images -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 201 Created
+Content-Length: 565
+Content-Type: application/json
+X-Request-Id: 4e5af9930150bdf188e90f80f69e58a5
+X-Request-Id: 4e5af9930150bdf188e90f80f69e58a5
+time_total: 0.037s
+{
+  "upload_id": "a102d213-9631-4080-89a5-eee3120bd5b8",
+  "status": "awaiting_upload",
+  "reject_reason": null,
+  "photo_url": null,
+  "upload_url": "https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/uploads/pending/a102d213-9631-4080-89a5-eee3120bd5b8?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025642Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>",
+  "expires_in": 600
+}
+
+# Failure: finishing before anything was uploaded
+
+[2026-10-22T02:56:42Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/15/images/a102d213-9631-4080-89a5-eee3120bd5b8/complete -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 409 Conflict
+Content-Length: 157
+Content-Type: application/json
+X-Request-Id: 460b8905e66a21046fada469f538e11e
+X-Request-Id: 460b8905e66a21046fada469f538e11e
+time_total: 0.114s
+{
+  "error": {
+    "code": "UPLOAD_NOT_RECEIVED",
+    "detail": "nothing has been uploaded to upload_url yet",
+    "fields": null,
+    "request_id": "460b8905e66a21046fada469f538e11e"
+  }
+}
+
+# Failure: someone else's item
+
+[2026-10-22T02:56:42Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/15/images -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 403 Forbidden
+Content-Length: 132
+Content-Type: application/json
+X-Request-Id: dee35ce31a1260a275bc47d10a367b63
+X-Request-Id: dee35ce31a1260a275bc47d10a367b63
+time_total: 0.034s
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "detail": "you do not own this resource",
+    "fields": null,
+    "request_id": "dee35ce31a1260a275bc47d10a367b63"
+  }
+}
+
+# Failure: a presigned URL with one character of the signature changed. R2 refuses it
+
+[2026-10-22T02:56:43Z]
+$ curl -i -X PUT --data-binary @bottle-photo.png 'https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/uploads/pending/a102d213-9631-4080-89a5-eee3120bd5b8?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025642Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>'
+HTTP/1.1 403 Forbidden
+Content-Type: application/xml
+Content-Length: 2450
+time_total: 0.128s
+<Code>SignatureDoesNotMatch</Code>
+<Message>The request signature we calculated does not match the signature you provided. Check your secret access key and signing method.</Message>
+(rest of the XML error body omitted: it echoes the signed request)
+
+# The real PUT, client to R2 directly
+
+[2026-10-22T02:56:43Z]
+$ curl -i -X PUT --data-binary @bottle-photo.png 'https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/uploads/pending/a102d213-9631-4080-89a5-eee3120bd5b8?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025642Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>'
+HTTP/1.1 200 OK
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 0
+ETag: "a09636a1b7c9b19b31d1fcbb0cf87340"
+time_total: 0.342s
+
+[2026-10-22T02:56:43Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/15/images/a102d213-9631-4080-89a5-eee3120bd5b8/complete -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 202 Accepted
+Content-Length: 112
+Content-Type: application/json
+X-Request-Id: 9a456879c173cf88a4c722543b13abe5
+X-Request-Id: 9a456879c173cf88a4c722543b13abe5
+time_total: 0.108s
+{
+  "upload_id": "a102d213-9631-4080-89a5-eee3120bd5b8",
+  "status": "processing",
+  "reject_reason": null,
+  "photo_url": null
+}
+(polled GET /items/15/images/a102d213-9631-4080-89a5-eee3120bd5b8 every second; worker finished after about 2s)
+
+[2026-10-22T02:56:44Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/15/images/a102d213-9631-4080-89a5-eee3120bd5b8
+HTTP/1.1 200 OK
+Content-Length: 524
+Content-Type: application/json
+X-Request-Id: 22b30e2c8981ebafd766fe63e048c1e3
+X-Request-Id: 22b30e2c8981ebafd766fe63e048c1e3
+time_total: 0.031s
+{
+  "upload_id": "a102d213-9631-4080-89a5-eee3120bd5b8",
+  "status": "ready",
+  "reject_reason": null,
+  "photo_url": "https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/items/15/a102d213-9631-4080-89a5-eee3120bd5b8/photo.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025644Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>"
+}
+
+# Download: GET /items/{id} returns a presigned GET for the processed photo (re-encoded to JPEG, max edge 1280, EXIF stripped)
+
+[2026-10-22T02:56:44Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/15
+HTTP/1.1 200 OK
+Content-Length: 676
+Content-Type: application/json
+X-Request-Id: 1f3e8b86f91fa28d906d136a8dcfe254
+X-Request-Id: 1f3e8b86f91fa28d906d136a8dcfe254
+time_total: 0.032s
+{
+  "name": "Blue water bottle",
+  "description": "Blue insulated steel water bottle with a dented bottom and a mountain sticker near the lid",
+  "location_id": 4,
+  "id": 15,
+  "user_id": 5,
+  "type": 0,
+  "status": "matched",
+  "created_at": "2026-10-22T02:55:13.220294Z",
+  "photo_url": "https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/items/15/a102d213-9631-4080-89a5-eee3120bd5b8/photo.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025644Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>"
+}
+
+[2026-10-22T02:56:44Z]
+$ curl -i -X GET 'https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/items/15/a102d213-9631-4080-89a5-eee3120bd5b8/photo.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025644Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>'
+HTTP/1.1 200 OK
+Content-Type: image/jpeg
+Content-Length: 22118
+ETag: "ba16dc16c1c99308d0f412600cd53b67"
+time_total: 0.342s
+<22118 bytes, JPEG image data, JFIF standard 1.01, aspect ratio, density 1x1, segment length 16, baseline, precision 8, 1280x960, components 3>
+
+# Failure: a rejected upload. A shell script PUT where a photo should be; the image worker checks the bytes, rejects it and keeps the current photo
+
+[2026-10-22T02:56:45Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/15/images -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 201 Created
+Content-Length: 565
+Content-Type: application/json
+X-Request-Id: 6320f9ea799b96980abbb8dfd13cbf41
+X-Request-Id: 6320f9ea799b96980abbb8dfd13cbf41
+time_total: 0.037s
+upload_id: 14b0633a-7c7a-4d83-bc6a-b6ec2509b7a5
+
+[2026-10-22T02:56:45Z]
+$ curl -i -X PUT --data-binary @not-an-image.txt 'https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/uploads/pending/14b0633a-7c7a-4d83-bc6a-b6ec2509b7a5?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025645Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>'
+HTTP/1.1 200 OK
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 0
+ETag: "a09e1febe18ad5f15896abaeeef9e994"
+time_total: 0.321s
+
+[2026-10-22T02:56:45Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/15/images/14b0633a-7c7a-4d83-bc6a-b6ec2509b7a5/complete -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 202 Accepted
+Content-Length: 112
+Content-Type: application/json
+X-Request-Id: 2d071ceb0a904a8c78da92290b58c4f1
+X-Request-Id: 2d071ceb0a904a8c78da92290b58c4f1
+time_total: 0.125s
+{
+  "upload_id": "14b0633a-7c7a-4d83-bc6a-b6ec2509b7a5",
+  "status": "processing",
+  "reject_reason": null,
+  "photo_url": null
+}
+(polled GET /items/15/images/14b0633a-7c7a-4d83-bc6a-b6ec2509b7a5 every second; worker finished after about 2s)
+
+[2026-10-22T02:56:46Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/15/images/14b0633a-7c7a-4d83-bc6a-b6ec2509b7a5
+HTTP/1.1 200 OK
+Content-Length: 155
+Content-Type: application/json
+X-Request-Id: 02d1a5d71636a15a85d5f383d1e2d533
+X-Request-Id: 02d1a5d71636a15a85d5f383d1e2d533
+time_total: 0.030s
+{
+  "upload_id": "14b0633a-7c7a-4d83-bc6a-b6ec2509b7a5",
+  "status": "rejected",
+  "reject_reason": "text/x-shellscript is not an allowed image type",
+  "photo_url": null
+}
+
+[2026-10-22T02:56:47Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/15/images/00000000-0000-0000-0000-000000000000
+HTTP/1.1 404 Not Found
+Content-Length: 125
+Content-Type: application/json
+X-Request-Id: e89115610d1550bb1063a306246167e3
+X-Request-Id: e89115610d1550bb1063a306246167e3
+time_total: 0.031s
+{
+  "error": {
+    "code": "IMAGE_NOT_FOUND",
+    "detail": "image not found",
+    "fields": null,
+    "request_id": "e89115610d1550bb1063a306246167e3"
+  }
+}
+
+# B. Files (proof of ownership, e.g. a receipt): upload, list, download, delete. These do pass through the API, which checks them before writing
+
+[2026-10-22T02:56:47Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/files -H 'Authorization: Bearer <redacted>' -F file=@receipt-scan.png
+HTTP/1.1 201 Created
+Content-Length: 213
+Content-Type: application/json
+X-Request-Id: fb49d68ed2eca6aa27cefe4e44083cb7
+X-Request-Id: fb49d68ed2eca6aa27cefe4e44083cb7
+time_total: 0.310s
+{
+  "id": 2,
+  "user_id": 5,
+  "key": "users/5/files/02cf3718-c53b-45fa-9b07-6a67dbde4eb6.png",
+  "original_filename": "receipt-scan.png",
+  "content_type": "image/png",
+  "size_bytes": 123071,
+  "uploaded_at": "2026-10-22T02:56:47.245147Z"
+}
+
+[2026-10-22T02:56:47Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/files -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 200 OK
+Content-Length: 215
+Content-Type: application/json
+X-Request-Id: ff05822632691a98ef979196c0d262d3
+X-Request-Id: ff05822632691a98ef979196c0d262d3
+time_total: 0.032s
+[
+  {
+    "id": 2,
+    "user_id": 5,
+    "key": "users/5/files/02cf3718-c53b-45fa-9b07-6a67dbde4eb6.png",
+    "original_filename": "receipt-scan.png",
+    "content_type": "image/png",
+    "size_bytes": 123071,
+    "uploaded_at": "2026-10-22T02:56:47.245147Z"
+  }
+]
+
+[2026-10-22T02:56:47Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/files/2 -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 200 OK
+Content-Length: 213
+Content-Type: application/json
+X-Request-Id: dcc5e5617147111951739f52d00f1ca2
+X-Request-Id: dcc5e5617147111951739f52d00f1ca2
+time_total: 0.032s
+{
+  "id": 2,
+  "user_id": 5,
+  "key": "users/5/files/02cf3718-c53b-45fa-9b07-6a67dbde4eb6.png",
+  "original_filename": "receipt-scan.png",
+  "content_type": "image/png",
+  "size_bytes": 123071,
+  "uploaded_at": "2026-10-22T02:56:47.245147Z"
+}
+
+[2026-10-22T02:56:47Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/files/2/content -H 'Authorization: Bearer <redacted>' -o /dev/null
+HTTP/1.1 200 OK
+Content-Length: 123071
+Content-Type: image/png
+X-Request-Id: 2e77f8847d85dab8d59ad54fac068cb7
+X-Request-Id: 2e77f8847d85dab8d59ad54fac068cb7
+time_total: 0.241s
+<123071 bytes, PNG image data, 400 x 300, 8-bit/color RGB, non-interlaced>
+(body written to /dev/null; the size check is in the content-length header above)
+
+# Failures: no token, another user's file, a rejected type, too large, too many
+
+[2026-10-22T02:56:47Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/files -F file=@receipt-scan.png
+HTTP/1.1 401 Unauthorized
+Content-Length: 127
+Content-Type: application/json
+Www-Authenticate: Bearer
+X-Request-Id: 9c9b12e71bdc92c6ee8953452bc8f442
+X-Request-Id: 9c9b12e71bdc92c6ee8953452bc8f442
+time_total: 0.075s
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "detail": "not authenticated",
+    "fields": null,
+    "request_id": "9c9b12e71bdc92c6ee8953452bc8f442"
+  }
+}
+
+[2026-10-22T02:56:47Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/files/2 -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 403 Forbidden
+Content-Length: 132
+Content-Type: application/json
+X-Request-Id: 53f19045a998dd601078632b0fda9a70
+X-Request-Id: 53f19045a998dd601078632b0fda9a70
+time_total: 0.034s
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "detail": "you do not own this resource",
+    "fields": null,
+    "request_id": "53f19045a998dd601078632b0fda9a70"
+  }
+}
+
+[2026-10-22T02:56:48Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/files -H 'Authorization: Bearer <redacted>' -F 'file=@not-an-image.txt;type=image/png'
+HTTP/1.1 400 Bad Request
+Content-Length: 169
+Content-Type: application/json
+X-Request-Id: 8e4c288fa43838aff1d0d999e940b8b1
+X-Request-Id: 8e4c288fa43838aff1d0d999e940b8b1
+time_total: 0.034s
+{
+  "error": {
+    "code": "UNSUPPORTED_FILE_TYPE",
+    "detail": "only JPEG, PNG, WebP, HEIC and PDF files are accepted",
+    "fields": null,
+    "request_id": "8e4c288fa43838aff1d0d999e940b8b1"
+  }
+}
+
+[2026-10-22T02:56:48Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/files -H 'Authorization: Bearer <redacted>' -F 'file=@too-big.bin;type=application/pdf'
+HTTP/1.1 413 Request Entity Too Large
+Content-Length: 140
+Content-Type: application/json
+X-Request-Id: c76f86ea159099642e72c349a4095cd0
+X-Request-Id: c76f86ea159099642e72c349a4095cd0
+time_total: 0.745s
+{
+  "error": {
+    "code": "FILE_TOO_LARGE",
+    "detail": "each file must be at most 10 MB",
+    "fields": null,
+    "request_id": "c76f86ea159099642e72c349a4095cd0"
+  }
+}
+
+[2026-10-22T02:56:48Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/files/batch -H 'Authorization: Bearer <redacted>' -F files=@receipt-scan.png -F files=@receipt-scan.png -F files=@receipt-scan.png -F files=@receipt-scan.png -F files=@receipt-scan.png -F files=@receipt-scan.png
+HTTP/1.1 413 Request Entity Too Large
+Content-Length: 136
+Content-Type: application/json
+X-Request-Id: 549c4880a3fd906e75203e08db7fd7d9
+X-Request-Id: 549c4880a3fd906e75203e08db7fd7d9
+time_total: 0.062s
+{
+  "error": {
+    "code": "TOO_MANY_FILES",
+    "detail": "at most 5 files per request",
+    "fields": null,
+    "request_id": "549c4880a3fd906e75203e08db7fd7d9"
+  }
+}
+
+[2026-10-22T02:56:48Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/files/99999 -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 404 Not Found
+Content-Length: 123
+Content-Type: application/json
+X-Request-Id: 75c808c2d5bf88194680e82b0883d1f8
+X-Request-Id: 75c808c2d5bf88194680e82b0883d1f8
+time_total: 0.034s
+{
+  "error": {
+    "code": "FILE_NOT_FOUND",
+    "detail": "file not found",
+    "fields": null,
+    "request_id": "75c808c2d5bf88194680e82b0883d1f8"
+  }
+}
+
+# C. The relational store holds each object's metadata (key, type found in the bytes, size), so the two services are joined, not just both present
+
+[2026-10-22T02:56:49Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "select id, user_id, key, original_filename, content_type, size_bytes from files order by id;"
+ id | user_id |                          key                           | original_filename | content_type | size_bytes 
+----+---------+--------------------------------------------------------+-------------------+--------------+------------
+  2 |       5 | users/5/files/02cf3718-c53b-45fa-9b07-6a67dbde4eb6.png | receipt-scan.png  | image/png    |     123071
+(1 row)
+
+
+[2026-10-22T02:56:49Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "select item_id, upload_id, status, photo_key, content_type, size_bytes, reject_reason from images where item_id in (15, 11) order by created_at;"
+ item_id |              upload_id               |     status      |                        photo_key                        | content_type | size_bytes |                  reject_reason                  
+---------+--------------------------------------+-----------------+---------------------------------------------------------+--------------+------------+-------------------------------------------------
+      11 | 6584ff46-7ff2-4910-832c-8678d49f99a5 | awaiting_upload |                                                         |              |            | 
+      11 | f19d87e4-9ab8-4b5f-af82-0adbf21c5bff | ready           | items/11/f19d87e4-9ab8-4b5f-af82-0adbf21c5bff/photo.jpg | image/png    |        156 | 
+      15 | 576c395f-e11a-465e-970a-9061f624416e | rejected        |                                                         |              |            | text/x-shellscript is not an allowed image type
+      15 | a102d213-9631-4080-89a5-eee3120bd5b8 | ready           | items/15/a102d213-9631-4080-89a5-eee3120bd5b8/photo.jpg | image/png    |     144564 | 
+      15 | 14b0633a-7c7a-4d83-bc6a-b6ec2509b7a5 | rejected        |                                                         |              |            | text/x-shellscript is not an allowed image type
+(5 rows)
+
+
+# And the bucket itself, listed with the app's own storage port (app/ports/storage.py). Every row above has its object; the rejected upload left nothing
+
+[2026-10-22T02:56:49Z]
+ubuntu@ec2$ docker compose exec app python -   # list the bucket and read each object's metadata
+bucket: deployed-project-bucket
+      305  items/11/f19d87e4-9ab8-4b5f-af82-0adbf21c5bff/photo.jpg  metadata={'upload-id': 'f19d87e4-9ab8-4b5f-af82-0adbf21c5bff'}
+    22118  items/15/a102d213-9631-4080-89a5-eee3120bd5b8/photo.jpg  metadata={'upload-id': 'a102d213-9631-4080-89a5-eee3120bd5b8'}
+        0  project-bucket  metadata={}
+   123071  users/5/files/02cf3718-c53b-45fa-9b07-6a67dbde4eb6.png  metadata={'original-name': 'receipt-scan.png', 'upload-id': '02cf3718-c53b-45fa-9b07-6a67dbde4eb6'}
+
+# D. Delete: the row goes first, then the object
+
+[2026-10-22T02:56:51Z]
+$ curl -i -X DELETE http://18.222.255.231:8000/api/v1/files/2 -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 204 No Content
+X-Request-Id: 43e169eddc5f89ea2f482b23169cf281
+X-Request-Id: 43e169eddc5f89ea2f482b23169cf281
+time_total: 0.127s
+
+[2026-10-22T02:56:51Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/files/2 -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 404 Not Found
+Content-Length: 123
+Content-Type: application/json
+X-Request-Id: 20f6c1c5bbd1a1ca30c5065ccf927a65
+X-Request-Id: 20f6c1c5bbd1a1ca30c5065ccf927a65
+time_total: 0.033s
+{
+  "error": {
+    "code": "FILE_NOT_FOUND",
+    "detail": "file not found",
+    "fields": null,
+    "request_id": "20f6c1c5bbd1a1ca30c5065ccf927a65"
+  }
+}
+
+[2026-10-22T02:56:51Z]
+ubuntu@ec2$ docker compose exec app python -   # is the deleted file's object gone?
+users/ prefix now: []

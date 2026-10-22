@@ -1,0 +1,304 @@
+Authentication and authorization, against the deployed service at http://18.222.255.231:8000/api/v1
+Deployed commit f5cea42a4bb1b0873efe79a19a8fad3667fa4d63. Captured 2026-10-22 02:54 UTC from a client
+outside AWS. Tokens, passwords and signatures are replaced with <redacted>; status
+codes, timings and bodies are as returned. (X-Request-Id appears twice because both
+nginx and the API set it; they carry the same id.)
+
+Accounts: eval-owner and eval-other have only the 'user' role. eval-admin was given
+'admin' with the manage script (section 5). The protected route for the three
+outcomes is the admin-only GET /users.
+
+# 1. Registration is open, but a client cannot choose its own role
+
+[2026-10-22T02:54:19Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/users -H 'Content-Type: application/json' -d '{"display_name":"eval-roles","real_name":"Role Picker","password":"<redacted>","roles":["admin"]}'
+HTTP/1.1 422 Unprocessable Entity
+Content-Length: 232
+Content-Type: application/json
+X-Request-Id: 0b63b751b81b2dba81d6e94bb078953a
+X-Request-Id: 0b63b751b81b2dba81d6e94bb078953a
+time_total: 0.030s
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "detail": "the request contains invalid data",
+    "fields": [
+      {
+        "field": "body.roles",
+        "message": "Extra inputs are not permitted",
+        "type": "extra_forbidden"
+      }
+    ],
+    "request_id": "0b63b751b81b2dba81d6e94bb078953a"
+  }
+}
+
+[2026-10-22T02:54:19Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/users -H 'Content-Type: application/json' -d '{"display_name":"eval-owner","real_name":"Duplicate","password":"<redacted>"}'
+HTTP/1.1 409 Conflict
+Content-Length: 154
+Content-Type: application/json
+X-Request-Id: cedff94d68f2f22cf22014442a8690fd
+X-Request-Id: cedff94d68f2f22cf22014442a8690fd
+time_total: 0.098s
+{
+  "error": {
+    "code": "USER_NAME_TAKEN",
+    "detail": "a user with that display name already exists",
+    "fields": null,
+    "request_id": "cedff94d68f2f22cf22014442a8690fd"
+  }
+}
+
+# 2. Login: the right password, a wrong one, and an unknown name. Both failures get the same 401 and message
+
+[2026-10-22T02:54:19Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/auth/login -d 'username=eval-owner&password=<redacted>'
+HTTP/1.1 200 OK
+Content-Length: 200
+Content-Type: application/json
+X-Request-Id: f97c83c25997a0a3644abd14f2b97f02
+X-Request-Id: f97c83c25997a0a3644abd14f2b97f02
+time_total: 0.099s
+{
+  "access_token": "<redacted>",
+  "token_type": "bearer",
+  "expires_in": 1800
+}
+
+[2026-10-22T02:54:19Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/auth/login -d 'username=eval-owner&password=wrong-password'
+HTTP/1.1 401 Unauthorized
+Content-Length: 144
+Content-Type: application/json
+Www-Authenticate: Bearer
+X-Request-Id: c51bea70047fb2895d5aeff3809a5be9
+X-Request-Id: c51bea70047fb2895d5aeff3809a5be9
+time_total: 0.101s
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "detail": "incorrect display name or password",
+    "fields": null,
+    "request_id": "c51bea70047fb2895d5aeff3809a5be9"
+  }
+}
+
+[2026-10-22T02:54:19Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/auth/login -d 'username=nobody-by-this-name&password=wrong-password'
+HTTP/1.1 401 Unauthorized
+Content-Length: 144
+Content-Type: application/json
+Www-Authenticate: Bearer
+X-Request-Id: 4711eb4f84844432491fe2f628729dd8
+X-Request-Id: 4711eb4f84844432491fe2f628729dd8
+time_total: 0.098s
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "detail": "incorrect display name or password",
+    "fields": null,
+    "request_id": "4711eb4f84844432491fe2f628729dd8"
+  }
+}
+
+# 3. One protected route, three outcomes: no credential 401, a valid credential without the role 403, with the role 200
+
+[2026-10-22T02:54:19Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/users
+HTTP/1.1 401 Unauthorized
+Content-Length: 127
+Content-Type: application/json
+Www-Authenticate: Bearer
+X-Request-Id: 3d7a1104c05d06b135ba92fb936de624
+X-Request-Id: 3d7a1104c05d06b135ba92fb936de624
+time_total: 0.029s
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "detail": "not authenticated",
+    "fields": null,
+    "request_id": "3d7a1104c05d06b135ba92fb936de624"
+  }
+}
+
+[2026-10-22T02:54:19Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/users -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 403 Forbidden
+Content-Length: 126
+Content-Type: application/json
+X-Request-Id: 2e609debf51b3b62750550c9398e5c15
+X-Request-Id: 2e609debf51b3b62750550c9398e5c15
+time_total: 0.033s
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "detail": "requires one of: admin",
+    "fields": null,
+    "request_id": "2e609debf51b3b62750550c9398e5c15"
+  }
+}
+
+[2026-10-22T02:54:19Z]
+$ curl -i -X GET 'http://18.222.255.231:8000/api/v1/users?limit=5' -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 200 OK
+Content-Length: 785
+Content-Type: application/json
+X-Request-Id: 47c6acbca3f9debe34d00ac866b92d51
+X-Request-Id: 47c6acbca3f9debe34d00ac866b92d51
+time_total: 0.034s
+[
+  {
+    "display_name": "app_admin",
+    "real_name": "Administrator",
+    "id": 1,
+    "is_active": true,
+    "created_at": "2026-10-22T02:12:37.731741Z",
+    "roles": [
+      {
+        "id": 2,
+        "name": "admin"
+      }
+    ]
+  },
+  {
+    "display_name": "alex-rivera",
+    "real_name": "Alex Rivera",
+    "id": 2,
+    "is_active": true,
+    "created_at": "2026-10-22T02:12:37.810111Z",
+    "roles": [
+      {
+        "id": 1,
+        "name": "user"
+      }
+    ]
+  },
+  {
+    "display_name": "jordan-lee",
+    "real_name": "Jordan Lee",
+    "id": 3,
+    "is_active": true,
+    "created_at": "2026-10-22T02:12:37.891552Z",
+    "roles": [
+      {
+        "id": 1,
+        "name": "user"
+      }
+    ]
+  },
+  {
+    "display_name": "sam-patel",
+    "real_name": "Sam Patel",
+    "id": 4,
+    "is_active": true,
+    "created_at": "2026-10-22T02:12:37.972685Z",
+    "roles": [
+      {
+        "id": 1,
+        "name": "user"
+      }
+    ]
+  },
+  {
+    "display_name": "eval-owner",
+    "real_name": "Evaluation owner",
+    "id": 5,
+    "is_active": true,
+    "created_at": "2026-10-22T02:36:12.243212Z",
+    "roles": [
+      {
+        "id": 1,
+        "name": "user"
+      }
+    ]
+  }
+]
+
+# 4. Tokens the server must refuse. Both claim to be eval-admin (sub=7) and are unexpired
+
+# 4a. alg=none, no signature. The server only accepts HS256 (algorithms=["HS256"] in app/tokens.py)
+token header: {"alg":"none","typ":"JWT"}  payload: {"sub":"7","exp":1792639459}
+
+[2026-10-22T02:54:19Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/users -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 401 Unauthorized
+Content-Length: 123
+Content-Type: application/json
+Www-Authenticate: Bearer
+X-Request-Id: 652bb80223b2b63b6f84db0409b11079
+X-Request-Id: 652bb80223b2b63b6f84db0409b11079
+time_total: 0.031s
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "detail": "invalid token",
+    "fields": null,
+    "request_id": "652bb80223b2b63b6f84db0409b11079"
+  }
+}
+
+# 4b. HS256, signed with a key that is not the server's JWT_SECRET
+
+[2026-10-22T02:54:19Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/users -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 401 Unauthorized
+Content-Length: 123
+Content-Type: application/json
+Www-Authenticate: Bearer
+X-Request-Id: 2903cf669413e9d06db69ec98a7c9f92
+X-Request-Id: 2903cf669413e9d06db69ec98a7c9f92
+time_total: 0.028s
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "detail": "invalid token",
+    "fields": null,
+    "request_id": "2903cf669413e9d06db69ec98a7c9f92"
+  }
+}
+
+# 4c. Not a JWT at all
+
+[2026-10-22T02:54:19Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/auth/me -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 401 Unauthorized
+Content-Length: 123
+Content-Type: application/json
+Www-Authenticate: Bearer
+X-Request-Id: 5884f90b05fe644d508ec27183d96f59
+X-Request-Id: 5884f90b05fe644d508ec27183d96f59
+time_total: 0.030s
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "detail": "invalid token",
+    "fields": null,
+    "request_id": "5884f90b05fe644d508ec27183d96f59"
+  }
+}
+
+# 5. Roles are assigned by a script on the instance, never by an endpoint. Run twice (no change, exit 0), then for an unknown user (exit 1)
+$ docker compose exec app python -m manage grant-role eval-admin admin   # run 1, 2026-10-22T02:37:16Z
+granted admin to eval-admin
+roles now: admin, user
+exit=0
+$ docker compose exec app python -m manage grant-role eval-admin admin   # run 2, 2026-10-22T02:37:17Z
+eval-admin already had admin; nothing changed
+roles now: admin, user
+exit=0
+$ docker compose exec app python -m manage grant-role no-such-user admin
+no user named 'no-such-user'
+exit=1
+
+# 6. Passwords are stored as bcrypt hashes, cost 10 ($2b$10$). Only the prefix is shown
+
+[2026-10-22T02:54:20Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "select u.id, u.display_name, left(u.password_hash, 7) as hash_prefix, length(u.password_hash) as hash_len, string_agg(r.name, ',' order by r.name) as roles from users u join user_roles ur on ur.user_id = u.id join roles r on r.id = ur.role_id where u.display_name like 'eval-%' group by u.id order by u.id;"
+ id | display_name | hash_prefix | hash_len |   roles    
+----+--------------+-------------+----------+------------
+  5 | eval-owner   | $2b$10$     |       60 | user
+  6 | eval-other   | $2b$10$     |       60 | user
+  7 | eval-admin   | $2b$10$     |       60 | admin,user
+(3 rows)
+

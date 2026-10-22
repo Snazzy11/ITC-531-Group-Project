@@ -59,6 +59,17 @@ check_compute() {
   #          that runs an OCI image. Use "$CLI" and values from the .env.
   local result
 
+  if [[ "${DEPLOY_TARGET:-}" == ec2 ]]; then
+    if result=$("$CLI" ec2 describe-instances --region "$AWS_REGION" \
+        --instance-ids "$EC2_INSTANCE_ID" --output text \
+        --query 'Reservations[0].Instances[0].State.Name'); then
+      echo "OK - EC2 instance ${EC2_INSTANCE_ID} state: ${result}"
+      return 0
+    fi
+    echo "FAIL - Unable to describe EC2 instance ${EC2_INSTANCE_ID}"
+    return 1
+  fi
+
   if result=$("$CLI" ecs describe-clusters \
       --output text \
       --clusters "${ECS_CLUSTER}" \
@@ -146,10 +157,11 @@ adapter_verify() {
 }
 
 # -----------------------------------------------------------------------------
-# Deploy to the same ECS service on each run. Print the HTTPS URL last.
-# The task definition, network and HTTPS listener must already exist.
+# DEPLOY_TARGET=ecs (Milestone 6): deploy to the same ECS service on each run.
+# Print the HTTPS URL last. The task definition, network and HTTPS listener
+# must already exist.
 # -----------------------------------------------------------------------------
-adapter_deploy() (
+deploy_ecs() (
   local name registry repository image_id image_result image_count image_failure
   local account_id image_path version
   local service_result service_status service_failure service_action
@@ -379,9 +391,10 @@ if checks.get("database") != "ok":
 
 # -----------------------------------------------------------------------------
 # List every service in this cluster so duplicates show up in the audit.
-# This doesn't cover images, task revisions or other AWS resources.
+# This doesn't cover images, task revisions or other AWS resources;
+# enumerate_region below does.
 # -----------------------------------------------------------------------------
-adapter_enumerate() {
+enumerate_ecs() {
   local services service service_details identifier status
   local -a service_arns=()
   for service in CLI AWS_REGION ECS_CLUSTER; do
@@ -419,7 +432,7 @@ adapter_enumerate() {
 # -----------------------------------------------------------------------------
 # Remove the configured ECS service. Other AWS resources stay in place.
 # -----------------------------------------------------------------------------
-adapter_destroy() (
+destroy_ecs() (
   local result status failure tasks task
   export AWS_PAGER="" MSYS_NO_PATHCONV=1
   if [[ -z "${CLI:-}" || -z "${AWS_REGION:-}" ||
@@ -470,13 +483,353 @@ adapter_destroy() (
     return 1
   fi
 
-  result=$(adapter_enumerate) || return 1
+  result=$(enumerate_ecs) || return 1
   if [[ -n "$result" ]]; then
     printf 'ECS services still remain:\n%s\n' "$result" >&2
     return 1
   fi
   echo "ECS service cleanup finished. Other AWS resources were not removed."
 )
+
+# =============================================================================
+# DEPLOY_TARGET=ec2 (final product): the whole compose stack on one EC2
+# instance. The instance, its security group and the Cloudflare R2 bucket were
+# made by hand; adapter_destroy removes all three. The app's settings and
+# secrets live in .env.local on the instance. Nothing here reads or prints it.
+# =============================================================================
+
+ec2_ssh() {
+  local -a options=(-i "$EC2_SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15
+    -o StrictHostKeyChecking=accept-new)
+  if [[ -n "${EC2_KNOWN_HOSTS:-}" ]]; then
+    options+=(-o "UserKnownHostsFile=$EC2_KNOWN_HOSTS")
+  fi
+  ssh "${options[@]}" "$EC2_SSH_USER@$EC2_HOST" "$@"
+}
+
+# Runs a command that changes something, or with ADAPTER_DRY_RUN=1 prints it
+# instead. Read-only calls don't go through this.
+mutate() {
+  if [[ "${ADAPTER_DRY_RUN:-}" == 1 ]]; then
+    printf 'DRY RUN, would run:'
+    printf ' %q' "$@"
+    printf '\n'
+  else
+    "$@"
+  fi
+}
+
+# Reports a step that went through mutate(), marked when nothing really ran.
+done_echo() {
+  if [[ "${ADAPTER_DRY_RUN:-}" == 1 ]]; then
+    printf '(dry run) %s\n' "$*"
+  else
+    printf '%s\n' "$*"
+  fi
+}
+
+# Check out DEPLOY_SHA on the instance, build and start the stack, check
+# /health from here, and print the URL last. Safe to run again: the same SHA
+# rebuilds and restarts the API and workers, and the data volumes stay.
+deploy_ec2() (
+  local name health remote_args
+  export PYTHON="${PYTHON:-python3}"
+  for name in EC2_HOST EC2_SSH_USER EC2_SSH_KEY EC2_APP_DIR DEPLOY_SHA SERVICE_URL; do
+    if [[ -z "${!name:-}" ]]; then
+      echo "Missing configuration: $name" >&2
+      return 1
+    fi
+  done
+  for name in ssh curl "$PYTHON"; do
+    if ! command -v "$name" >/dev/null; then
+      echo "Command not found: $name" >&2
+      return 1
+    fi
+  done
+  if [[ ! "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "DEPLOY_SHA must be the full 40-character commit SHA." >&2
+    return 1
+  fi
+  if [[ ! "$SERVICE_URL" =~ ^https?://[^/]+/?$ ]]; then
+    echo "SERVICE_URL needs an address without a path." >&2
+    return 1
+  fi
+
+  printf 'deploy %s to %s@%s:%s at %s\n' "$DEPLOY_SHA" "$EC2_SSH_USER" "$EC2_HOST" \
+    "$EC2_APP_DIR" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+  # The values go to the remote script as quoted arguments, not pasted into it.
+  remote_args=$(printf '%q ' "$EC2_APP_DIR" "$DEPLOY_SHA")
+  ec2_ssh "bash -s -- $remote_args" <<'REMOTE' || return 1
+set -euo pipefail
+cd "$1"
+sha=$2
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+  echo "The checkout on the instance has local changes; deploy refused." >&2
+  exit 1
+fi
+if [[ ! -f .env.local ]]; then
+  echo ".env.local is missing on the instance." >&2
+  exit 1
+fi
+git fetch --quiet origin
+git -c advice.detachedHead=false checkout --quiet --detach "$sha"
+echo "checked out $(git rev-parse HEAD)"
+compose=(docker compose --env-file .env.local)
+# </dev/null everywhere: this script arrives on stdin, so nothing may read it.
+"${compose[@]}" build --quiet </dev/null
+# As in CI: --wait rejects the workers, whose health check is turned off, so
+# wait for the rest and check that no worker exited. sed only trims the
+# progress lines; with pipefail a compose failure still fails the deploy.
+"${compose[@]}" up -d --wait --wait-timeout 300 gateway app prometheus grafana \
+  </dev/null 2>&1 | sed -E '/ (Waiting|Healthy)$/d'
+"${compose[@]}" up -d matching_worker image_worker logger notifier </dev/null 2>&1 |
+  sed -E '/ (Waiting|Healthy)$/d'
+sleep 5
+exited=$("${compose[@]}" ps --status exited --services </dev/null)
+if [[ -n "$exited" ]]; then
+  echo "These services exited: $exited" >&2
+  exit 1
+fi
+# compose tags what it builds :latest. Tag the API image with the commit too and
+# print its content-addressed id, which is what the containers actually run.
+container=$("${compose[@]}" ps -q app </dev/null)
+image_id=$(docker inspect --format '{{.Image}}' "$container")
+repository=$(docker inspect --format '{{.Config.Image}}' "$container")
+repository=${repository%:*}
+docker tag "$image_id" "$repository:$sha"
+echo "IMAGE_REF=$repository:$sha"
+echo "IMAGE_ID=$image_id"
+"${compose[@]}" ps --format 'table {{.Service}}\t{{.Image}}\t{{.Status}}' </dev/null
+REMOTE
+
+  health=$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+    "${SERVICE_URL%/}/health") || return 1
+  printf '%s\n' "$health"
+  printf '%s' "$health" | "$PYTHON" -c '
+import json
+import sys
+
+if json.load(sys.stdin).get("checks", {}).get("database") != "ok":
+    sys.exit("Database health check failed.")
+' || return 1
+  printf '%s\n' "${SERVICE_URL%/}"
+)
+
+# One "<kind>\t<columns>" line per row a read-only AWS call returns. A failed
+# call is an error, never an empty list: an audit that can't look must not
+# print CLEAN.
+aws_rows() {
+  local kind=$1 out line
+  shift
+  if ! out=$(AWS_PAGER="" "$CLI" "$@" --region "$AWS_REGION" --output text); then
+    echo "Could not list $kind; the audit is incomplete." >&2
+    return 1
+  fi
+  out=${out//$'\r'/}
+  while IFS= read -r line; do
+    if [[ -n "$line" && "$line" != None ]]; then
+      printf '%s\t%s\n' "$kind" "$line"
+    fi
+  done <<< "$out"
+}
+
+# Everything in AWS_REGION that costs money or holds our data, whoever made it,
+# so leftovers from Milestone 6 show up too. The default VPC and its default
+# security group are left out. IAM, budgets and other regions are not checked.
+enumerate_region() {
+  aws_rows ec2-instance ec2 describe-instances \
+    --filters Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped \
+    --query 'Reservations[].Instances[].[InstanceId,State.Name,InstanceType,PublicIpAddress]' || return 1
+  aws_rows ebs-volume ec2 describe-volumes \
+    --query 'Volumes[].[VolumeId,State,Size]' || return 1
+  aws_rows ebs-snapshot ec2 describe-snapshots --owner-ids self \
+    --query 'Snapshots[].[SnapshotId,StartTime]' || return 1
+  aws_rows ami ec2 describe-images --owners self \
+    --query 'Images[].[ImageId,Name]' || return 1
+  aws_rows elastic-ip ec2 describe-addresses \
+    --query 'Addresses[].[AllocationId,PublicIp]' || return 1
+  aws_rows nat-gateway ec2 describe-nat-gateways \
+    --filter Name=state,Values=pending,available \
+    --query 'NatGateways[].[NatGatewayId,State]' || return 1
+  aws_rows security-group ec2 describe-security-groups \
+    --query "SecurityGroups[?GroupName!='default'].[GroupId,GroupName]" || return 1
+  aws_rows key-pair ec2 describe-key-pairs \
+    --query 'KeyPairs[].[KeyPairId,KeyName]' || return 1
+  aws_rows load-balancer elbv2 describe-load-balancers \
+    --query 'LoadBalancers[].[LoadBalancerArn,State.Code]' || return 1
+  aws_rows target-group elbv2 describe-target-groups \
+    --query 'TargetGroups[].[TargetGroupArn]' || return 1
+  aws_rows http-api apigatewayv2 get-apis \
+    --query 'Items[].[ApiId,Name,ApiEndpoint]' || return 1
+  aws_rows ecs-cluster ecs list-clusters --query 'clusterArns[]' || return 1
+  aws_rows ecr-repository ecr describe-repositories \
+    --query 'repositories[].[repositoryName]' || return 1
+  aws_rows rds-instance rds describe-db-instances \
+    --query 'DBInstances[].[DBInstanceIdentifier,DBInstanceStatus]' || return 1
+  aws_rows rds-snapshot rds describe-db-snapshots \
+    --query 'DBSnapshots[].[DBSnapshotIdentifier,SnapshotType]' || return 1
+  aws_rows log-group logs describe-log-groups \
+    --query 'logGroups[].[logGroupName,storedBytes]' || return 1
+  aws_rows ssm-parameter ssm describe-parameters \
+    --query 'Parameters[].[Name,Type]' || return 1
+  aws_rows s3-bucket s3api list-buckets --query 'Buckets[].[Name]' || return 1
+}
+
+# The R2 bucket the app stores photos and files in, through the S3 API with
+# the R2 key pair in the OBJECT_STORE_PROFILE AWS CLI profile.
+object_store_args() {
+  printf '%s\0' --endpoint-url "$OBJECT_STORE_ENDPOINT_URL" \
+    --profile "$OBJECT_STORE_PROFILE" --region "${OBJECT_STORE_REGION:-auto}"
+}
+
+enumerate_object_store() {
+  local count error
+  local -a store=()
+  if [[ -z "${OBJECT_STORE_BUCKET:-}" ]]; then
+    echo "Object store not checked: set OBJECT_STORE_BUCKET, OBJECT_STORE_ENDPOINT_URL and OBJECT_STORE_PROFILE." >&2
+    return 0
+  fi
+  mapfile -d '' store < <(object_store_args)
+  if ! error=$(AWS_PAGER="" "$CLI" s3api head-bucket --bucket "$OBJECT_STORE_BUCKET" \
+      "${store[@]}" 2>&1 >/dev/null); then
+    if [[ "$error" == *"Not Found"* || "$error" == *404* ]]; then
+      return 0
+    fi
+    echo "Could not check object store bucket $OBJECT_STORE_BUCKET: $error" >&2
+    return 1
+  fi
+  count=$(AWS_PAGER="" "$CLI" s3api list-objects-v2 --bucket "$OBJECT_STORE_BUCKET" \
+    "${store[@]}" --query 'length(Contents || `[]`)' --output text) || return 1
+  printf 'object-store-bucket\t%s\t%s objects\n' "$OBJECT_STORE_BUCKET" "${count//$'\r'/}"
+}
+
+# Empties and deletes the R2 bucket, then terminates the instance and removes
+# its Elastic IPs, kept volumes, security groups and key pair. Each step is
+# skipped if that resource is already gone, so a second run is safe.
+destroy_ec2() (
+  local name state error existing groups addresses volumes group group_name item attempt
+  local -a store=()
+  export AWS_PAGER=""
+  for name in CLI AWS_REGION EC2_INSTANCE_ID; do
+    if [[ -z "${!name:-}" ]]; then
+      echo "Missing configuration: $name" >&2
+      return 1
+    fi
+  done
+
+  if [[ -n "${OBJECT_STORE_BUCKET:-}" ]]; then
+    existing=$(enumerate_object_store) || return 1
+    if [[ -n "$existing" ]]; then
+      mapfile -d '' store < <(object_store_args)
+      mutate "$CLI" s3 rm "s3://$OBJECT_STORE_BUCKET" --recursive --only-show-errors \
+        "${store[@]}" || return 1
+      mutate "$CLI" s3api delete-bucket --bucket "$OBJECT_STORE_BUCKET" \
+        "${store[@]}" || return 1
+      done_echo "Object store bucket $OBJECT_STORE_BUCKET emptied and deleted."
+    else
+      echo "Object store bucket $OBJECT_STORE_BUCKET is already removed."
+    fi
+  else
+    echo "Object store not configured here; empty and delete the bucket by hand." >&2
+  fi
+
+  # Only "no such instance" counts as gone; any other error stops here.
+  if ! state=$("$CLI" ec2 describe-instances --region "$AWS_REGION" \
+      --instance-ids "$EC2_INSTANCE_ID" --output text \
+      --query 'Reservations[0].Instances[0].State.Name' 2>&1); then
+    error=$state
+    if [[ "$error" != *InvalidInstanceID.NotFound* ]]; then
+      echo "Could not read $EC2_INSTANCE_ID: $error" >&2
+      return 1
+    fi
+    state=missing
+  fi
+  state=${state//$'\r'/}
+  if [[ "$state" == terminated || "$state" == missing ]]; then
+    echo "$EC2_INSTANCE_ID is already terminated."
+  else
+    # Read what belongs to the instance before it is gone.
+    groups=$("$CLI" ec2 describe-instances --region "$AWS_REGION" \
+      --instance-ids "$EC2_INSTANCE_ID" --output text \
+      --query 'Reservations[0].Instances[0].SecurityGroups[].GroupId') || return 1
+    addresses=$("$CLI" ec2 describe-addresses --region "$AWS_REGION" \
+      --filters "Name=instance-id,Values=$EC2_INSTANCE_ID" --output text \
+      --query 'Addresses[].AllocationId') || return 1
+    volumes=$("$CLI" ec2 describe-instances --region "$AWS_REGION" \
+      --instance-ids "$EC2_INSTANCE_ID" --output text \
+      --query 'Reservations[0].Instances[0].BlockDeviceMappings[?Ebs.DeleteOnTermination==`false`].Ebs.VolumeId') || return 1
+
+    mutate "$CLI" ec2 terminate-instances --region "$AWS_REGION" \
+      --instance-ids "$EC2_INSTANCE_ID" --output text \
+      --query 'TerminatingInstances[0].CurrentState.Name' || return 1
+    mutate "$CLI" ec2 wait instance-terminated --region "$AWS_REGION" \
+      --instance-ids "$EC2_INSTANCE_ID" || return 1
+    done_echo "$EC2_INSTANCE_ID terminated."
+
+    for item in ${addresses//$'\r'/}; do
+      [[ "$item" == None ]] && continue
+      mutate "$CLI" ec2 release-address --region "$AWS_REGION" --allocation-id "$item" || return 1
+      done_echo "Released Elastic IP $item."
+    done
+    for item in ${volumes//$'\r'/}; do
+      [[ "$item" == None ]] && continue
+      mutate "$CLI" ec2 delete-volume --region "$AWS_REGION" --volume-id "$item" || return 1
+      done_echo "Deleted volume $item."
+    done
+    for group in ${groups//$'\r'/}; do
+      [[ "$group" == None ]] && continue
+      group_name=$("$CLI" ec2 describe-security-groups --region "$AWS_REGION" \
+        --group-ids "$group" --output text --query 'SecurityGroups[0].GroupName') || return 1
+      [[ "${group_name//$'\r'/}" == default ]] && continue
+      # The terminated instance's network interface can hold the group for a
+      # little while (DependencyViolation), so try for up to a minute.
+      for attempt in 1 2 3 4 5 6; do
+        mutate "$CLI" ec2 delete-security-group --region "$AWS_REGION" --group-id "$group" && break
+        [[ $attempt == 6 ]] && return 1
+        sleep 10
+      done
+      done_echo "Deleted security group $group (${group_name//$'\r'/})."
+    done
+  fi
+
+  if [[ -n "${EC2_KEY_NAME:-}" ]]; then
+    mutate "$CLI" ec2 delete-key-pair --region "$AWS_REGION" --key-name "$EC2_KEY_NAME" || return 1
+    done_echo "Deleted key pair $EC2_KEY_NAME (if it existed)."
+  fi
+  echo "EC2 teardown finished. The verify step lists anything else still in $AWS_REGION."
+)
+
+# =============================================================================
+# The functions the course scripts call. DEPLOY_TARGET picks the shape.
+# =============================================================================
+
+require_target() {
+  case "${DEPLOY_TARGET:-}" in
+    ecs|ec2) return 0 ;;
+    *) echo "Set DEPLOY_TARGET to ecs or ec2 in aws.env." >&2; return 1 ;;
+  esac
+}
+
+adapter_deploy() {
+  require_target || return 1
+  "deploy_$DEPLOY_TARGET"
+}
+
+adapter_enumerate() {
+  require_target || return 1
+  if [[ -n "${ECS_CLUSTER:-}" ]]; then
+    enumerate_ecs || return 1
+  fi
+  if [[ "$DEPLOY_TARGET" == ec2 ]]; then
+    enumerate_region || return 1
+    enumerate_object_store || return 1
+  fi
+}
+
+adapter_destroy() {
+  require_target || return 1
+  "destroy_$DEPLOY_TARGET"
+}
 
 # =============================================================================
 # ILLUSTRATIVE FRAGMENTS

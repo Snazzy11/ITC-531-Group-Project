@@ -296,12 +296,54 @@ API, workers, logger and notifier with `docker compose up --wait`, and runs
 always torn down at the end.
 
 # Deploying
-CI builds the image but doesn't push or deploy it; the comment on `push: false` in `.github/workflows/ci.yml` says
-why. We deploy to AWS (ECS behind API Gateway) by hand with our adapter, `adapters/aws.sh`.
-`milestones/milestone6/README.md` has a full run with its output.
+CI builds and tests the image but doesn't push or deploy it; the comment on `push: false` in
+`.github/workflows/ci.yml` says why. We deploy by hand with our adapter, `adapters/aws.sh`, which drives two shapes:
 
-1. Copy `adapters/aws.env.example` to `adapters/aws.env` and fill it in. The app's own settings (database, JWT secret,
-   broker, bucket) go in the ECS task definition, not in this file. The example lists them all.
+- `DEPLOY_TARGET=ec2`, the final product: the whole `compose.yml` stack on one EC2 instance, with Cloudflare R2 as
+  the object store. `final_product/evidence/ci-and-deploy.md` has a full run with its output.
+- `DEPLOY_TARGET=ecs`, Milestone 6: the API alone on ECS behind API Gateway. `milestones/milestone6/README.md` has
+  that run.
+
+## On EC2
+1. Launch an instance (we used Ubuntu on a c7i-flex.large in us-east-2) and install Docker with the Compose plugin.
+   Clone the repository into the login user's home. Write `.env.local` there as in [Running it](#running-it), with
+   the object store's values:
+   - `S3_ENDPOINT_URL` is the S3 API address alone, with no bucket on the end. For R2 that is
+     `https://<account id>.r2.cloudflarestorage.com`.
+   - `S3_BUCKET` is the bucket.
+   - `S3_PUBLIC_ENDPOINT_URL` stays empty.
+   - `AWS_DEFAULT_REGION` is `auto` for R2.
+   - The key pair is an R2 API token's, scoped to that bucket.
+
+   See [Failure modes](#failure-modes-in-the-final-deployment) for what goes wrong otherwise.
+2. On your machine, copy `adapters/aws.env.example` to `adapters/aws.env`. Set `DEPLOY_TARGET=ec2`, fill in the
+   EC2 section, and set `DEPLOY_SHA` to the full SHA of a commit that is already on GitHub.
+3. Deploy. `adapter_deploy` checks out that SHA on the instance and builds and starts the stack. It tags the API
+   image with the SHA, checks `/health` from your machine, and prints the service URL on its last line:
+   ```sh
+   set -a; source adapters/aws.env; set +a
+   source adapters/aws.sh
+   adapter_deploy
+   ```
+4. The monitoring is on the instance: Grafana at `http://<EC2_HOST>:3000` and Prometheus at `http://<EC2_HOST>:9090`,
+   if the security group allows those ports. Grafana uses the `GRAFANA_USER` and `GRAFANA_PASSWORD` from the
+   instance's `.env.local`.
+5. Audit, and tear down when you're done. `cloud-audit.sh` and `cloud-down.sh` come from the course's Module 7
+   folder; copy them into `scripts/` first. With `DEPLOY_TARGET=ec2` the audit lists everything in the region, and
+   the R2 bucket if `OBJECT_STORE_*` is set. The AWS CLI user needs read access to all of it. Try the teardown with
+   `ADAPTER_DRY_RUN=1` first: it prints each change instead of making it.
+   ```sh
+   bash scripts/cloud-audit.sh aws                       # what exists
+   ADAPTER_DRY_RUN=1 bash scripts/cloud-down.sh aws      # what would be destroyed
+   bash scripts/cloud-down.sh aws                        # destroy it
+   bash scripts/cloud-audit.sh aws                       # should print CLEAN
+   ```
+   `final_product/teardown/residual-risk.md` lists what the audit can't see and how to check it by hand.
+
+## On ECS (Milestone 6)
+1. Copy `adapters/aws.env.example` to `adapters/aws.env` with `DEPLOY_TARGET=ecs` and fill in the ECS sections. The
+   app's own settings (database, JWT secret, broker, bucket) go in the ECS task definition, not in this file. The
+   example lists them all.
 2. Build the image, tagged with the full commit SHA:
    ```sh
    set -a; source adapters/aws.env; set +a
@@ -312,13 +354,6 @@ why. We deploy to AWS (ECS behind API Gateway) by hand with our adapter, `adapte
    ```sh
    source adapters/aws.sh
    adapter_deploy
-   ```
-4. Audit, and tear down when you're done. `cloud-audit.sh` and `cloud-down.sh` come from the course's Module 7
-   folder; copy them into `scripts/` first.
-   ```sh
-   bash scripts/cloud-audit.sh aws    # what exists
-   bash scripts/cloud-down.sh aws     # destroy it
-   bash scripts/cloud-audit.sh aws    # should print CLEAN
    ```
 
 # Dashboard
@@ -353,6 +388,20 @@ After rebuilding the stack, every request through `localhost:8000` returned 503 
 The API refused to start with a "no credentials" error from boto3. The S3 settings in `.env.local.example` used names the code never reads (`S3_ENDPOINT`, `S3_REGION`), so the real keys were never set and boto3 would have talked to Amazon instead of the local store anyway. The fix was renaming them to what `app/ports/storage.py` reads (`S3_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, and so on) and filling in the keys.
 
 CI failed starting the stack with `container campus-seekr-notifier-1 has no healthcheck configured`. The workers turn off the image's health check (it calls the API, which they don't run), and the older Docker Compose on GitHub's runners rejects `--wait` for such containers, while newer versions just wait for them to be running. The fix was waiting only for the gateway and API, starting the workers separately, and having `scripts/smoke_test.sh` check that none of them exited.
+
+## Failure modes in the final deployment
+The first deployment to EC2 stored every object in the wrong place. Upload links pointed at the bucket's public
+`r2.dev` address, which isn't the S3 API. `.env.local` had the bucket's name at the end of `S3_ENDPOINT_URL`, a
+different name in `S3_BUCKET`, and the `r2.dev` address in `S3_PUBLIC_ENDPOINT_URL`. boto3 keeps a path that is
+part of `endpoint_url`, so every request went to the bucket in the path, with keys prefixed by `S3_BUCKET`. Even
+the startup "create the bucket" call turned into writing an empty object named after `S3_BUCKET`, so nothing
+failed at startup. We found it by reading an upload URL. The fix was the endpoint with no path, the real bucket in
+`S3_BUCKET`, `S3_PUBLIC_ENDPOINT_URL` empty and `AWS_DEFAULT_REGION=auto`, then recreating the API and image worker.
+
+The first `adapter_deploy` failed with `container campus-seekr-image_worker-1 has no healthcheck configured`. It
+is the same problem CI had: Ubuntu's Docker Compose 2.40.3 also rejects `up --wait` for the workers, whose
+healthcheck is disabled. The fix was the same too: the adapter waits only for the gateway, API, Prometheus and
+Grafana, starts the workers separately, and fails if any of them exits.
 
 # Design docs
 - `docs/Architecture.drawio.html` - the services, the store, and the presigned path
