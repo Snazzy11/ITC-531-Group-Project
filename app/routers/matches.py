@@ -105,9 +105,9 @@ def matches_by_item(item_id: int, db: Session = Depends(get_db)):
     return crud.list_matches(db, item_id=item_id)
 
 
-# There is deliberately no PATCH /matches/{id}. Changing a match to use a different
-# items is not just an edit, the old pair must be changed back to 'open' and the
-# new pair validated again, so we use DELETE + POST. See "No update for matches"
+# There is deliberately no update for matches. Changing a match to use a different
+# items should not be allowed, and the old pair should instead be changed back to 'open' and the
+# new pair validated again. So dont update, use DELETE + POST. See "No update for matches"
 # under Decisions in the README.
 
 

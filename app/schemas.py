@@ -195,6 +195,23 @@ class UserCreate(UserBase):  # No role field: everyone registers as a plain user
     password: Password
 
 
+class UserUpdate(BaseModel):
+    """Names only. Roles change by script (manage.py) and there is no password change."""
+
+    model_config = REQUEST
+
+    display_name: str | None = Field(default=None, min_length=6, max_length=50)
+    real_name: str | None = Field(default=None, min_length=2, max_length=50)
+
+    # Omitting a field leaves it as is; an explicit null would clear a required column.
+    @field_validator("display_name", "real_name")
+    @classmethod
+    def not_null(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("cannot be null")
+        return value
+
+
 class RoleOut(BaseModel):
     model_config = RESPONSE
     id: int
