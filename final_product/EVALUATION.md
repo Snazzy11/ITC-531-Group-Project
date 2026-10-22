@@ -22,18 +22,25 @@ Recorded 2026-10-22 03:01 UTC, before any measurement.
 
 ## (b) Latency distribution
 
-TODO(team): teammate's results, for the three most important endpoints.
+Measured by Devon Burton against the ECS Fargate deployment of the same commit: image
+`seekr:f5cea42...` in ECR, 0.25 vCPU / 512 MiB, HTTPS through API Gateway in us-east-2. Results committed
+2026-10-22 03:08 UTC. 500 requests per endpoint, all 200. Full results, including a local run:
+`milestones/milestone6/LATENCY_RESULTS.md` in the repository. Tool, concurrency and client location: TODO(team).
 
-| Endpoint | Tool | Requests | Concurrency | p50 | p95 | p99 | Meets C1/C2? |
-|---|---|---|---|---|---|---|---|
-| | | | | | | | |
+| Endpoint | p50 | p95 | p99 | Threshold | Met? |
+|---|---|---|---|---|---|
+| `GET /items` | 46.8 ms | 62.9 ms | 118.0 ms | C2: p95 <= 200 ms | Yes, by 137.1 ms |
+| `POST /auth/login` (slowest) | 349.8 ms | 565.9 ms | 771.6 ms | C1: p95 <= 1,000 ms | Yes, by 434.1 ms |
+| `GET /auth/me` | 46.8 ms | 70.9 ms | 107.9 ms | C1: p95 <= 1,000 ms | Yes, by 929.1 ms |
 
-Client location and date: TODO(team).
+Login is the slowest because it checks a bcrypt hash, which is CPU work.
 
 ## (c) Cold start: ruled out
 
 The compute shape is one EC2 instance running long-lived containers. Nothing scales to zero, and the API process
-that served every transcript started once
+that served every transcript started once.
+https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-lifecycle.html
+
 
 ## (d) Cost per 1,000 requests
 
@@ -46,11 +53,12 @@ instance sent 41.1 MB (`tx_bytes`). R2 held 330,783 bytes in 6 objects.
 | Compute duration | None billed separately; all compute is the instance (next line) | $0                                  |
 | Idle/reserved capacity | c7i-flex.large, billed per second while running | No charges accrued for this project |
 | HTTP front door | nginx on the instance, so no load balancer or API Gateway | $0                                  |
-| Egress | 41.1 MB out of EC2 | No charges accrued for this project)                          |
+| Egress | 41.1 MB out of EC2 | No charges accrued for this project                           |
 | Log ingestion/retention | No CloudWatch; Docker logs on the instance disk | $0                                  |
 | Storage at rest | 14 GB EBS volume + 330 KB in R2 | No charges accrued for this project                         |
 
 Our actual cost was $0 with the free tier
+So its literally $0.00 per 1000 requests at this stage (it wont scale that way though)
 
 ## (e) Local vs. deployed
 
