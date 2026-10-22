@@ -1,0 +1,1055 @@
+Relational data service (PostgreSQL 16.6, container on the EC2 instance), deployed commit f5cea42.
+Captured 2026-10-22 02:55 UTC. API calls go through the public gateway at http://18.222.255.231:8000/api/v1;
+psql runs on the instance. Tokens and passwords are <redacted>.
+
+# A. The schema builds from an empty database. The data volume was created at:
+
+[2026-10-22T02:55:07Z]
+ubuntu@ec2$ docker volume inspect campus-seekr_seekr_data --format '{{.CreatedAt}}'
+2026-10-22T02:12:20Z
+
+# Postgres initialising that empty volume (first lines of the db container's log), then the API creating the tables at startup (Base.metadata.create_all in app/api.py; there are no migrations)
+
+[2026-10-22T02:55:08Z]
+ubuntu@ec2$ docker compose --env-file .env.local logs --no-color --timestamps db | grep -E 'initialized with locale|creating subdirectories|CREATE DATABASE|init process complete|ready to accept connections' | head -8
+db-1  | 2026-10-22T02:12:22.895284467Z The database cluster will be initialized with locale "en_US.utf8".
+db-1  | 2026-10-22T02:12:22.898484874Z creating subdirectories ... ok
+db-1  | 2026-10-22T02:12:24.307974493Z 2026-10-22 02:12:24.307 UTC [40] LOG:  database system is ready to accept connections
+db-1  | 2026-10-22T02:12:24.422907881Z CREATE DATABASE
+db-1  | 2026-10-22T02:12:24.528168705Z PostgreSQL init process complete; ready for start up.
+db-1  | 2026-10-22T02:12:24.574271727Z 2026-10-22 02:12:24.574 UTC [1] LOG:  database system is ready to accept connections
+
+[2026-10-22T02:55:08Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "\dt"
+             List of relations
+ Schema |       Name        | Type  | Owner 
+--------+-------------------+-------+-------
+ public | files             | table | seekr
+ public | images            | table | seekr
+ public | items             | table | seekr
+ public | locations         | table | seekr
+ public | matches           | table | seekr
+ public | potential_matches | table | seekr
+ public | roles             | table | seekr
+ public | user_roles        | table | seekr
+ public | users             | table | seekr
+(9 rows)
+
+
+# Every foreign key, unique and check constraint, as Postgres itself reports them (pg_constraint), not as the ORM describes them
+
+[2026-10-22T02:55:09Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "select conrelid::regclass as table_name, conname, pg_get_constraintdef(oid) as definition from pg_constraint where contype in ('f','u','c') and connamespace = 'public'::regnamespace order by contype, 1, 2;"
+    table_name     |               conname                |                              definition                               
+-------------------+--------------------------------------+-----------------------------------------------------------------------
+ items             | ck_items_description_min_length      | CHECK ((length((description)::text) >= 50))
+ items             | ck_items_type                        | CHECK ((type = ANY (ARRAY[0, 1])))
+ matches           | ck_matches_distinct_items            | CHECK ((lost_item_id <> found_item_id))
+ user_roles        | user_roles_role_id_fkey              | FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+ user_roles        | user_roles_user_id_fkey              | FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+ items             | items_location_id_fkey               | FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE RESTRICT
+ items             | items_user_id_fkey                   | FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+ files             | files_user_id_fkey                   | FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+ images            | images_item_id_fkey                  | FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+ matches           | matches_found_item_id_fkey           | FOREIGN KEY (found_item_id) REFERENCES items(id) ON DELETE RESTRICT
+ matches           | matches_lost_item_id_fkey            | FOREIGN KEY (lost_item_id) REFERENCES items(id) ON DELETE RESTRICT
+ potential_matches | potential_matches_found_item_id_fkey | FOREIGN KEY (found_item_id) REFERENCES items(id) ON DELETE CASCADE
+ potential_matches | potential_matches_lost_item_id_fkey  | FOREIGN KEY (lost_item_id) REFERENCES items(id) ON DELETE CASCADE
+ users             | users_display_name_key               | UNIQUE (display_name)
+ locations         | locations_name_key                   | UNIQUE (name)
+ files             | files_key_key                        | UNIQUE (key)
+ matches           | uq_matches_item_pair                 | UNIQUE (lost_item_id, found_item_id)
+ potential_matches | uq_potential_matches_item_pair       | UNIQUE (lost_item_id, found_item_id)
+(18 rows)
+
+
+# B. The database enforces them on its own. These go straight to psql, past the API and the ORM
+
+[2026-10-22T02:55:09Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "insert into items (name, description, type, location_id, user_id) values ('ghost', repeat('x', 60), 0, 9999, 5);"
+ERROR:  insert or update on table "items" violates foreign key constraint "items_location_id_fkey"
+DETAIL:  Key (location_id)=(9999) is not present in table "locations".
+
+[2026-10-22T02:55:09Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "delete from locations where id = 1;"
+ERROR:  update or delete on table "locations" violates foreign key constraint "items_location_id_fkey" on table "items"
+DETAIL:  Key (id)=(1) is still referenced from table "items".
+
+[2026-10-22T02:55:10Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "insert into items (name, description, type, location_id, user_id) values ('short', 'too short', 0, 1, 5);"
+ERROR:  new row for relation "items" violates check constraint "ck_items_description_min_length"
+DETAIL:  Failing row contains (13, short, too short, 0, open, 1, 5, 2026-10-22 02:55:10.673419+00).
+
+[2026-10-22T02:55:10Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "insert into matches (lost_item_id, found_item_id) values (1, 1);"
+ERROR:  new row for relation "matches" violates check constraint "ck_matches_distinct_items"
+DETAIL:  Failing row contains (2, 1, 1, 2026-10-22 02:55:11.071863+00).
+
+# C. Locations: full CRUD (admin only for writes)
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/locations -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Engineering Building","coordinates":"43.5891,-84.7752","description":"Front desk, first floor"}'
+HTTP/1.1 201 Created
+Content-Length: 111
+Content-Type: application/json
+X-Request-Id: adadf90ac47b2aff99df8bd702c7d271
+X-Request-Id: adadf90ac47b2aff99df8bd702c7d271
+time_total: 0.039s
+{
+  "name": "Engineering Building",
+  "coordinates": "43.5891,-84.7752",
+  "description": "Front desk, first floor",
+  "id": 4
+}
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/locations -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Engineering Building","coordinates":"43.5891,-84.7752"}'
+HTTP/1.1 409 Conflict
+Content-Length: 154
+Content-Type: application/json
+X-Request-Id: b60628a78e7e89db411a48d9e66d94b2
+X-Request-Id: b60628a78e7e89db411a48d9e66d94b2
+time_total: 0.034s
+{
+  "error": {
+    "code": "LOCATION_NAME_TAKEN",
+    "detail": "a location with that name already exists",
+    "fields": null,
+    "request_id": "b60628a78e7e89db411a48d9e66d94b2"
+  }
+}
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/locations -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Not An Admin Hall","coordinates":"0,0"}'
+HTTP/1.1 403 Forbidden
+Content-Length: 126
+Content-Type: application/json
+X-Request-Id: 77e079a43cf43e9cb001e2390c78d8ea
+X-Request-Id: 77e079a43cf43e9cb001e2390c78d8ea
+time_total: 0.032s
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "detail": "requires one of: admin",
+    "fields": null,
+    "request_id": "77e079a43cf43e9cb001e2390c78d8ea"
+  }
+}
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/locations -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"No Coordinates Hall"}'
+HTTP/1.1 422 Unprocessable Entity
+Content-Length: 214
+Content-Type: application/json
+X-Request-Id: f0e25c92986b491da3538c82d2609c85
+X-Request-Id: f0e25c92986b491da3538c82d2609c85
+time_total: 0.033s
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "detail": "the request contains invalid data",
+    "fields": [
+      {
+        "field": "body.coordinates",
+        "message": "Field required",
+        "type": "missing"
+      }
+    ],
+    "request_id": "f0e25c92986b491da3538c82d2609c85"
+  }
+}
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/locations
+HTTP/1.1 200 OK
+Content-Length: 549
+Content-Type: application/json
+X-Request-Id: d4e53afe5cf61dad8a4f3015126d3848
+X-Request-Id: d4e53afe5cf61dad8a4f3015126d3848
+time_total: 0.031s
+[
+  {
+    "name": "Engineering Building",
+    "coordinates": "43.5891,-84.7752",
+    "description": "Front desk, first floor",
+    "id": 4,
+    "is_active": true
+  },
+  {
+    "name": "Main Library",
+    "coordinates": "40.1901,-84.2412",
+    "description": "Study floors, printers, and the front desk",
+    "id": 1,
+    "is_active": true
+  },
+  {
+    "name": "Recreation Center",
+    "coordinates": "40.1872,-84.2431",
+    "description": "Gym floor, locker rooms, and the front desk",
+    "id": 3,
+    "is_active": true
+  },
+  {
+    "name": "Student Union",
+    "coordinates": "40.1885,-84.2398",
+    "description": "Food court, bookstore, and lounges",
+    "id": 2,
+    "is_active": true
+  }
+]
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/locations/4
+HTTP/1.1 200 OK
+Content-Length: 111
+Content-Type: application/json
+X-Request-Id: 35ea1da122aefb6b058ce55572dc4d02
+X-Request-Id: 35ea1da122aefb6b058ce55572dc4d02
+time_total: 0.030s
+{
+  "name": "Engineering Building",
+  "coordinates": "43.5891,-84.7752",
+  "description": "Front desk, first floor",
+  "id": 4
+}
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/locations/9999
+HTTP/1.1 404 Not Found
+Content-Length: 131
+Content-Type: application/json
+X-Request-Id: 48f6e41c2f39d324297ec7703f5062c1
+X-Request-Id: 48f6e41c2f39d324297ec7703f5062c1
+time_total: 0.030s
+{
+  "error": {
+    "code": "LOCATION_NOT_FOUND",
+    "detail": "location not found",
+    "fields": null,
+    "request_id": "48f6e41c2f39d324297ec7703f5062c1"
+  }
+}
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X PATCH http://18.222.255.231:8000/api/v1/locations/4 -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"description":"Front desk, first floor, room 101"}'
+HTTP/1.1 200 OK
+Content-Length: 121
+Content-Type: application/json
+X-Request-Id: 4135a7ce09a50aee6124162a5d8418d7
+X-Request-Id: 4135a7ce09a50aee6124162a5d8418d7
+time_total: 0.037s
+{
+  "name": "Engineering Building",
+  "coordinates": "43.5891,-84.7752",
+  "description": "Front desk, first floor, room 101",
+  "id": 4
+}
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X PATCH http://18.222.255.231:8000/api/v1/locations/4 -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{}'
+HTTP/1.1 422 Unprocessable Entity
+Content-Length: 149
+Content-Type: application/json
+X-Request-Id: eecc1693df69ad21d053b142d05459e0
+X-Request-Id: eecc1693df69ad21d053b142d05459e0
+time_total: 0.034s
+{
+  "error": {
+    "code": "EMPTY_UPDATE",
+    "detail": "the request must change at least one field",
+    "fields": null,
+    "request_id": "eecc1693df69ad21d053b142d05459e0"
+  }
+}
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X DELETE http://18.222.255.231:8000/api/v1/locations/4 -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 204 No Content
+X-Request-Id: e2f3d67461302a461b53bc6aa998ffe3
+X-Request-Id: e2f3d67461302a461b53bc6aa998ffe3
+time_total: 0.035s
+
+# A retired location can't take new posts
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Calculator","description":"TI-84 Plus graphing calculator with a cracked screen protector and initials on the back","type":0,"location_id":4}'
+HTTP/1.1 409 Conflict
+Content-Length: 142
+Content-Type: application/json
+X-Request-Id: 402404f0e94b5aaca9072bf54f50d0d1
+X-Request-Id: 402404f0e94b5aaca9072bf54f50d0d1
+time_total: 0.032s
+{
+  "error": {
+    "code": "LOCATION_INACTIVE",
+    "detail": "that location has been retired",
+    "fields": null,
+    "request_id": "402404f0e94b5aaca9072bf54f50d0d1"
+  }
+}
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/locations/4/restore -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 200 OK
+Content-Length: 138
+Content-Type: application/json
+X-Request-Id: 1946c543e0c68584982fbb0ee3d81cee
+X-Request-Id: 1946c543e0c68584982fbb0ee3d81cee
+time_total: 0.036s
+{
+  "name": "Engineering Building",
+  "coordinates": "43.5891,-84.7752",
+  "description": "Front desk, first floor, room 101",
+  "id": 4,
+  "is_active": true
+}
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/locations -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Temporary Annex","coordinates":"43.5900,-84.7700"}'
+HTTP/1.1 201 Created
+Content-Length: 85
+Content-Type: application/json
+X-Request-Id: 14b9c974fd926568e79f8363c020cff6
+X-Request-Id: 14b9c974fd926568e79f8363c020cff6
+time_total: 0.035s
+{
+  "name": "Temporary Annex",
+  "coordinates": "43.5900,-84.7700",
+  "description": null,
+  "id": 6
+}
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X DELETE http://18.222.255.231:8000/api/v1/locations/6/hard -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 204 No Content
+X-Request-Id: 358526ba7fe9947c6a5a12d3737b28c1
+X-Request-Id: 358526ba7fe9947c6a5a12d3737b28c1
+time_total: 0.041s
+
+[2026-10-22T02:55:11Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/locations/6
+HTTP/1.1 404 Not Found
+Content-Length: 131
+Content-Type: application/json
+X-Request-Id: 8a55fffdbdf73414ec5a31e811a80ab0
+X-Request-Id: 8a55fffdbdf73414ec5a31e811a80ab0
+time_total: 0.030s
+{
+  "error": {
+    "code": "LOCATION_NOT_FOUND",
+    "detail": "location not found",
+    "fields": null,
+    "request_id": "8a55fffdbdf73414ec5a31e811a80ab0"
+  }
+}
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X DELETE http://18.222.255.231:8000/api/v1/locations/1/hard -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 409 Conflict
+Content-Length: 156
+Content-Type: application/json
+X-Request-Id: 7075ee141961a39270fdd577f133fa10
+X-Request-Id: 7075ee141961a39270fdd577f133fa10
+time_total: 0.033s
+{
+  "error": {
+    "code": "LOCATION_IN_USE",
+    "detail": "5 post(s) use that location; retire it instead",
+    "fields": null,
+    "request_id": "7075ee141961a39270fdd577f133fa10"
+  }
+}
+
+# D. Items: full CRUD. The poster comes from the token
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Grey hoodie","description":"Grey zip-up hoodie, size medium, with a campus running club logo on the left sleeve","type":0,"location_id":4}'
+HTTP/1.1 201 Created
+Content-Length: 243
+Content-Type: application/json
+X-Request-Id: a63e5dbcacbff731efadfe5863007bc2
+X-Request-Id: a63e5dbcacbff731efadfe5863007bc2
+time_total: 0.067s
+{
+  "name": "Grey hoodie",
+  "description": "Grey zip-up hoodie, size medium, with a campus running club logo on the left sleeve",
+  "location_id": 4,
+  "id": 14,
+  "user_id": 5,
+  "type": 0,
+  "status": "open",
+  "created_at": "2026-10-22T02:55:12.115167Z",
+  "photo_url": null
+}
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Keys","description":"short","type":0,"location_id":1}'
+HTTP/1.1 422 Unprocessable Entity
+Content-Length: 250
+Content-Type: application/json
+X-Request-Id: ac8385804f5a644229af41a172aa8261
+X-Request-Id: ac8385804f5a644229af41a172aa8261
+time_total: 0.032s
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "detail": "the request contains invalid data",
+    "fields": [
+      {
+        "field": "body.description",
+        "message": "String should have at least 50 characters",
+        "type": "string_too_short"
+      }
+    ],
+    "request_id": "ac8385804f5a644229af41a172aa8261"
+  }
+}
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Keys","description":"A ring of three brass keys with a red bottle opener and a small plastic dinosaur","type":0,"location_id":9999}'
+HTTP/1.1 404 Not Found
+Content-Length: 131
+Content-Type: application/json
+X-Request-Id: 65f665f2252a4a0ac3f32a9fb6c31879
+X-Request-Id: 65f665f2252a4a0ac3f32a9fb6c31879
+time_total: 0.036s
+{
+  "error": {
+    "code": "LOCATION_NOT_FOUND",
+    "detail": "location not found",
+    "fields": null,
+    "request_id": "65f665f2252a4a0ac3f32a9fb6c31879"
+  }
+}
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items -H 'Content-Type: application/json' -d '{"name":"Keys","description":"A ring of three brass keys with a red bottle opener and a small plastic dinosaur","type":0,"location_id":1}'
+HTTP/1.1 401 Unauthorized
+Content-Length: 127
+Content-Type: application/json
+Www-Authenticate: Bearer
+X-Request-Id: ade0f105df1a9f0b8db9bb16e079cb25
+X-Request-Id: ade0f105df1a9f0b8db9bb16e079cb25
+time_total: 0.030s
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "detail": "not authenticated",
+    "fields": null,
+    "request_id": "ade0f105df1a9f0b8db9bb16e079cb25"
+  }
+}
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X GET 'http://18.222.255.231:8000/api/v1/items?type=0&q=hoodie'
+HTTP/1.1 200 OK
+Content-Length: 527
+Content-Type: application/json
+X-Request-Id: 751dcdedc5033f2ebeb31fcc9ec8e659
+X-Request-Id: 751dcdedc5033f2ebeb31fcc9ec8e659
+time_total: 0.036s
+[
+  {
+    "name": "Grey hoodie",
+    "description": "Grey zip-up hoodie, size medium, with a campus running club logo on the left sleeve",
+    "location_id": 4,
+    "id": 14,
+    "user_id": 5,
+    "type": 0,
+    "status": "open",
+    "created_at": "2026-10-22T02:55:12.115167Z",
+    "photo_url": null
+  },
+  {
+    "name": "Grey hoodie",
+    "description": "Grey zip-up hoodie with the university logo on the front and a small hole in the left cuff, left on a chair in the lounge.",
+    "location_id": 2,
+    "id": 9,
+    "user_id": 2,
+    "type": 0,
+    "status": "open",
+    "created_at": "2026-10-22T02:12:38.106177Z",
+    "photo_url": null
+  }
+]
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/14
+HTTP/1.1 200 OK
+Content-Length: 243
+Content-Type: application/json
+X-Request-Id: c00fc54b88f104aeb1d71869760df304
+X-Request-Id: c00fc54b88f104aeb1d71869760df304
+time_total: 0.032s
+{
+  "name": "Grey hoodie",
+  "description": "Grey zip-up hoodie, size medium, with a campus running club logo on the left sleeve",
+  "location_id": 4,
+  "id": 14,
+  "user_id": 5,
+  "type": 0,
+  "status": "open",
+  "created_at": "2026-10-22T02:55:12.115167Z",
+  "photo_url": null
+}
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/99999
+HTTP/1.1 404 Not Found
+Content-Length: 123
+Content-Type: application/json
+X-Request-Id: 025e9640bd0b235f165ae6a4d68d9e31
+X-Request-Id: 025e9640bd0b235f165ae6a4d68d9e31
+time_total: 0.030s
+{
+  "error": {
+    "code": "ITEM_NOT_FOUND",
+    "detail": "item not found",
+    "fields": null,
+    "request_id": "025e9640bd0b235f165ae6a4d68d9e31"
+  }
+}
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X PATCH http://18.222.255.231:8000/api/v1/items/14 -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Grey running club hoodie"}'
+HTTP/1.1 200 OK
+Content-Length: 256
+Content-Type: application/json
+X-Request-Id: 30a3ac5e1ade1f8591e243645c8ad035
+X-Request-Id: 30a3ac5e1ade1f8591e243645c8ad035
+time_total: 0.071s
+{
+  "name": "Grey running club hoodie",
+  "description": "Grey zip-up hoodie, size medium, with a campus running club logo on the left sleeve",
+  "location_id": 4,
+  "id": 14,
+  "user_id": 5,
+  "type": 0,
+  "status": "open",
+  "created_at": "2026-10-22T02:55:12.115167Z",
+  "photo_url": null
+}
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X PATCH http://18.222.255.231:8000/api/v1/items/14 -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Not yours"}'
+HTTP/1.1 403 Forbidden
+Content-Length: 132
+Content-Type: application/json
+X-Request-Id: 05d9a06878c3102f0a8ec9acf2310146
+X-Request-Id: 05d9a06878c3102f0a8ec9acf2310146
+time_total: 0.041s
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "detail": "you do not own this resource",
+    "fields": null,
+    "request_id": "05d9a06878c3102f0a8ec9acf2310146"
+  }
+}
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X PATCH http://18.222.255.231:8000/api/v1/items/14/status -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"status":"returned"}'
+HTTP/1.1 409 Conflict
+Content-Length: 159
+Content-Type: application/json
+X-Request-Id: 3fdcc52c131adfa00e2a046a4187b1f3
+X-Request-Id: 3fdcc52c131adfa00e2a046a4187b1f3
+time_total: 0.041s
+{
+  "error": {
+    "code": "INVALID_STATUS_TRANSITION",
+    "detail": "an item cannot go from open to returned",
+    "fields": null,
+    "request_id": "3fdcc52c131adfa00e2a046a4187b1f3"
+  }
+}
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X DELETE http://18.222.255.231:8000/api/v1/items/14 -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 204 No Content
+X-Request-Id: 1854af92c0aa6a014faea906f56f6499
+X-Request-Id: 1854af92c0aa6a014faea906f56f6499
+time_total: 0.059s
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X GET 'http://18.222.255.231:8000/api/v1/items?q=hoodie&include_withdrawn=true'
+HTTP/1.1 200 OK
+Content-Length: 545
+Content-Type: application/json
+X-Request-Id: 7b2c1bd4c771185a14d255d5ca7aa1cf
+X-Request-Id: 7b2c1bd4c771185a14d255d5ca7aa1cf
+time_total: 0.037s
+[
+  {
+    "name": "Grey running club hoodie",
+    "description": "Grey zip-up hoodie, size medium, with a campus running club logo on the left sleeve",
+    "location_id": 4,
+    "id": 14,
+    "user_id": 5,
+    "type": 0,
+    "status": "withdrawn",
+    "created_at": "2026-10-22T02:55:12.115167Z",
+    "photo_url": null
+  },
+  {
+    "name": "Grey hoodie",
+    "description": "Grey zip-up hoodie with the university logo on the front and a small hole in the left cuff, left on a chair in the lounge.",
+    "location_id": 2,
+    "id": 9,
+    "user_id": 2,
+    "type": 0,
+    "status": "open",
+    "created_at": "2026-10-22T02:12:38.106177Z",
+    "photo_url": null
+  }
+]
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X DELETE http://18.222.255.231:8000/api/v1/items/14 -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 204 No Content
+X-Request-Id: 6da4888ae9bf518edeed24f506a3c030
+X-Request-Id: 6da4888ae9bf518edeed24f506a3c030
+time_total: 0.037s
+
+[2026-10-22T02:55:12Z]
+$ curl -i -X DELETE http://18.222.255.231:8000/api/v1/items/14/hard -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 403 Forbidden
+Content-Length: 126
+Content-Type: application/json
+X-Request-Id: 7f6fd84dc2d5469f975d0edc56d65f3f
+X-Request-Id: 7f6fd84dc2d5469f975d0edc56d65f3f
+time_total: 0.034s
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "detail": "requires one of: admin",
+    "fields": null,
+    "request_id": "7f6fd84dc2d5469f975d0edc56d65f3f"
+  }
+}
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X DELETE http://18.222.255.231:8000/api/v1/items/14/hard -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 204 No Content
+X-Request-Id: 9596fe04cb822992c7b5913542bf41df
+X-Request-Id: 9596fe04cb822992c7b5913542bf41df
+time_total: 0.037s
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/14
+HTTP/1.1 404 Not Found
+Content-Length: 123
+Content-Type: application/json
+X-Request-Id: a2324458ecc43354e73b6879ba319289
+X-Request-Id: a2324458ecc43354e73b6879ba319289
+time_total: 0.029s
+{
+  "error": {
+    "code": "ITEM_NOT_FOUND",
+    "detail": "item not found",
+    "fields": null,
+    "request_id": "a2324458ecc43354e73b6879ba319289"
+  }
+}
+
+# E. Matches. There is no PATCH by design: a match pairs one lost post with one found post, so changing a side is a new match (README, Decisions, "No update for matches"). The update is DELETE then POST, shown here
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Blue water bottle","description":"Blue insulated steel water bottle with a dented bottom and a mountain sticker near the lid","type":0,"location_id":4}'
+HTTP/1.1 201 Created
+Content-Length: 256
+Content-Type: application/json
+X-Request-Id: 55e64056d444ad7b8d009bd2ae7c1a32
+X-Request-Id: 55e64056d444ad7b8d009bd2ae7c1a32
+time_total: 0.065s
+{
+  "name": "Blue water bottle",
+  "description": "Blue insulated steel water bottle with a dented bottom and a mountain sticker near the lid",
+  "location_id": 4,
+  "id": 15,
+  "user_id": 5,
+  "type": 0,
+  "status": "open",
+  "created_at": "2026-10-22T02:55:13.220294Z",
+  "photo_url": null
+}
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Water bottle","description":"Found a blue steel water bottle with a dented bottom, left on a bench in the lobby","type":1,"location_id":4}'
+HTTP/1.1 201 Created
+Content-Length: 243
+Content-Type: application/json
+X-Request-Id: d5fff070b42ccfc1e5c1a4c8316d0a36
+X-Request-Id: d5fff070b42ccfc1e5c1a4c8316d0a36
+time_total: 0.059s
+found item id: 16
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Insulated bottle","description":"Blue insulated water bottle with a mountain sticker near the lid, by the vending machines","type":1,"location_id":4}'
+HTTP/1.1 201 Created
+Content-Length: 254
+Content-Type: application/json
+X-Request-Id: 9c9a4de657f1afc39a12d7727fb7db5d
+X-Request-Id: 9c9a4de657f1afc39a12d7727fb7db5d
+time_total: 0.066s
+found item id: 17
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/matches -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"lost_item_id":15,"found_item_id":16}'
+HTTP/1.1 201 Created
+Content-Length: 88
+Content-Type: application/json
+X-Request-Id: 419e1169400f78f3e7e44e1321cedd5d
+X-Request-Id: 419e1169400f78f3e7e44e1321cedd5d
+time_total: 0.058s
+{
+  "id": 3,
+  "lost_item_id": 15,
+  "found_item_id": 16,
+  "created_at": "2026-10-22T02:55:13.499450Z"
+}
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/matches -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"lost_item_id":15,"found_item_id":17}'
+HTTP/1.1 409 Conflict
+Content-Length: 148
+Content-Type: application/json
+X-Request-Id: b269716639b9040aac1e0da8086d8fae
+X-Request-Id: b269716639b9040aac1e0da8086d8fae
+time_total: 0.037s
+{
+  "error": {
+    "code": "ITEM_NOT_OPEN",
+    "detail": "item 15 is matched and cannot be matched",
+    "fields": null,
+    "request_id": "b269716639b9040aac1e0da8086d8fae"
+  }
+}
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/matches -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"lost_item_id":17,"found_item_id":17}'
+HTTP/1.1 422 Unprocessable Entity
+Content-Length: 142
+Content-Type: application/json
+X-Request-Id: 9386f7ec59bf9215d93948397f3f8b69
+X-Request-Id: 9386f7ec59bf9215d93948397f3f8b69
+time_total: 0.034s
+{
+  "error": {
+    "code": "MATCH_SELF",
+    "detail": "an item cannot be matched with itself",
+    "fields": null,
+    "request_id": "9386f7ec59bf9215d93948397f3f8b69"
+  }
+}
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/matches -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"lost_item_id":17,"found_item_id":15}'
+HTTP/1.1 422 Unprocessable Entity
+Content-Length: 148
+Content-Type: application/json
+X-Request-Id: 996c3a2aacd6cc5dacaecba5680f39da
+X-Request-Id: 996c3a2aacd6cc5dacaecba5680f39da
+time_total: 0.040s
+{
+  "error": {
+    "code": "ITEM_TYPE_MISMATCH",
+    "detail": "lost_item_id points at a found post",
+    "fields": null,
+    "request_id": "996c3a2aacd6cc5dacaecba5680f39da"
+  }
+}
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/matches -H 'Content-Type: application/json' -d '{"lost_item_id":15,"found_item_id":17}'
+HTTP/1.1 401 Unauthorized
+Content-Length: 127
+Content-Type: application/json
+Www-Authenticate: Bearer
+X-Request-Id: 9daedd90996053995a815a7def495025
+X-Request-Id: 9daedd90996053995a815a7def495025
+time_total: 0.029s
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "detail": "not authenticated",
+    "fields": null,
+    "request_id": "9daedd90996053995a815a7def495025"
+  }
+}
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/matches/3
+HTTP/1.1 200 OK
+Content-Length: 88
+Content-Type: application/json
+X-Request-Id: 2e1ec849d92c356996bef288aafbec49
+X-Request-Id: 2e1ec849d92c356996bef288aafbec49
+time_total: 0.030s
+{
+  "id": 3,
+  "lost_item_id": 15,
+  "found_item_id": 16,
+  "created_at": "2026-10-22T02:55:13.499450Z"
+}
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/15/matches
+HTTP/1.1 200 OK
+Content-Length: 90
+Content-Type: application/json
+X-Request-Id: 45661c66ce3a8bb0e574960af575cbc0
+X-Request-Id: 45661c66ce3a8bb0e574960af575cbc0
+time_total: 0.033s
+[
+  {
+    "id": 3,
+    "lost_item_id": 15,
+    "found_item_id": 16,
+    "created_at": "2026-10-22T02:55:13.499450Z"
+  }
+]
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/matches/99999
+HTTP/1.1 404 Not Found
+Content-Length: 125
+Content-Type: application/json
+X-Request-Id: c719fafca4767ae7cb0a301da2e5558b
+X-Request-Id: c719fafca4767ae7cb0a301da2e5558b
+time_total: 0.030s
+{
+  "error": {
+    "code": "MATCH_NOT_FOUND",
+    "detail": "match not found",
+    "fields": null,
+    "request_id": "c719fafca4767ae7cb0a301da2e5558b"
+  }
+}
+
+# The FK from matches to items is ON DELETE RESTRICT, so Postgres refuses to hard-delete a matched item; the API turns that IntegrityError into a 409
+
+[2026-10-22T02:55:13Z]
+$ curl -i -X DELETE http://18.222.255.231:8000/api/v1/items/15/hard -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 409 Conflict
+Content-Length: 158
+Content-Type: application/json
+X-Request-Id: 768c9fdd402fb89428f6fcb1fd467948
+X-Request-Id: 768c9fdd402fb89428f6fcb1fd467948
+time_total: 0.041s
+{
+  "error": {
+    "code": "ITEM_HAS_MATCHES",
+    "detail": "that item is in a match; delete the match first",
+    "fields": null,
+    "request_id": "768c9fdd402fb89428f6fcb1fd467948"
+  }
+}
+
+# Update the match: the owner picked the wrong found post. DELETE puts both items back to open, then POST pairs the lost item with the right one
+
+[2026-10-22T02:55:14Z]
+$ curl -i -X DELETE http://18.222.255.231:8000/api/v1/matches/3 -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 204 No Content
+X-Request-Id: 8b02e9d379cdfea5c4f3e96d5a399df8
+X-Request-Id: 8b02e9d379cdfea5c4f3e96d5a399df8
+time_total: 0.072s
+
+[2026-10-22T02:55:14Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/16
+HTTP/1.1 200 OK
+Content-Length: 243
+Content-Type: application/json
+X-Request-Id: c5bb6fafcfeadc707900cdd9d1c50192
+X-Request-Id: c5bb6fafcfeadc707900cdd9d1c50192
+time_total: 0.031s
+{
+  "name": "Water bottle",
+  "description": "Found a blue steel water bottle with a dented bottom, left on a bench in the lobby",
+  "location_id": 4,
+  "id": 16,
+  "user_id": 6,
+  "type": 1,
+  "status": "open",
+  "created_at": "2026-10-22T02:55:13.313648Z",
+  "photo_url": null
+}
+
+[2026-10-22T02:55:14Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/matches -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"lost_item_id":15,"found_item_id":17}'
+HTTP/1.1 201 Created
+Content-Length: 88
+Content-Type: application/json
+X-Request-Id: bb7ac8e3a72fa7c84bde24d685b0bb2f
+X-Request-Id: bb7ac8e3a72fa7c84bde24d685b0bb2f
+time_total: 0.056s
+{
+  "id": 4,
+  "lost_item_id": 15,
+  "found_item_id": 17,
+  "created_at": "2026-10-22T02:55:14.240575Z"
+}
+
+[2026-10-22T02:55:14Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/matches/3
+HTTP/1.1 404 Not Found
+Content-Length: 125
+Content-Type: application/json
+X-Request-Id: 5c8a316192566df6067f07970485985f
+X-Request-Id: 5c8a316192566df6067f07970485985f
+time_total: 0.030s
+{
+  "error": {
+    "code": "MATCH_NOT_FOUND",
+    "detail": "match not found",
+    "fields": null,
+    "request_id": "5c8a316192566df6067f07970485985f"
+  }
+}
+
+[2026-10-22T02:55:14Z]
+$ curl -i -X GET 'http://18.222.255.231:8000/api/v1/matches?item_id=15'
+HTTP/1.1 200 OK
+Content-Length: 90
+Content-Type: application/json
+X-Request-Id: 946b4277b4b0fc587ed8dcbbdd0a19e8
+X-Request-Id: 946b4277b4b0fc587ed8dcbbdd0a19e8
+time_total: 0.031s
+[
+  {
+    "id": 4,
+    "lost_item_id": 15,
+    "found_item_id": 17,
+    "created_at": "2026-10-22T02:55:14.240575Z"
+  }
+]
+
+# F. Users: create, read and update. PATCH /users/{id} was added for this final product to stand in for the update that matches deliberately do not have
+
+[2026-10-22T02:55:14Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/auth/me -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 200 OK
+Content-Length: 160
+Content-Type: application/json
+X-Request-Id: c6d632f2eb66ac1ffed19ffda6e7b4a2
+X-Request-Id: c6d632f2eb66ac1ffed19ffda6e7b4a2
+time_total: 0.035s
+{
+  "display_name": "eval-owner",
+  "real_name": "Evaluation owner",
+  "id": 5,
+  "is_active": true,
+  "created_at": "2026-10-22T02:36:12.243212Z",
+  "roles": [
+    {
+      "id": 1,
+      "name": "user"
+    }
+  ]
+}
+
+[2026-10-22T02:55:14Z]
+$ curl -i -X PATCH http://18.222.255.231:8000/api/v1/users/5 -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"real_name":"Evaluation Owner (renamed)"}'
+HTTP/1.1 200 OK
+Content-Length: 170
+Content-Type: application/json
+X-Request-Id: cc4c3d2bc793d1b5f99c56630bf7285f
+X-Request-Id: cc4c3d2bc793d1b5f99c56630bf7285f
+time_total: 0.040s
+{
+  "display_name": "eval-owner",
+  "real_name": "Evaluation Owner (renamed)",
+  "id": 5,
+  "is_active": true,
+  "created_at": "2026-10-22T02:36:12.243212Z",
+  "roles": [
+    {
+      "id": 1,
+      "name": "user"
+    }
+  ]
+}
+
+[2026-10-22T02:55:14Z]
+$ curl -i -X PATCH http://18.222.255.231:8000/api/v1/users/5 -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"real_name":"Not your account"}'
+HTTP/1.1 403 Forbidden
+Content-Length: 132
+Content-Type: application/json
+X-Request-Id: 11aa4285a536e5b674396008a3960be0
+X-Request-Id: 11aa4285a536e5b674396008a3960be0
+time_total: 0.033s
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "detail": "you do not own this resource",
+    "fields": null,
+    "request_id": "11aa4285a536e5b674396008a3960be0"
+  }
+}
+
+[2026-10-22T02:55:14Z]
+$ curl -i -X PATCH http://18.222.255.231:8000/api/v1/users/5 -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"display_name":"eval-admin"}'
+HTTP/1.1 409 Conflict
+Content-Length: 154
+Content-Type: application/json
+X-Request-Id: 042dba814a52109757a0f50e0601754b
+X-Request-Id: 042dba814a52109757a0f50e0601754b
+time_total: 0.035s
+{
+  "error": {
+    "code": "USER_NAME_TAKEN",
+    "detail": "a user with that display name already exists",
+    "fields": null,
+    "request_id": "042dba814a52109757a0f50e0601754b"
+  }
+}
+
+[2026-10-22T02:55:14Z]
+$ curl -i -X PATCH http://18.222.255.231:8000/api/v1/users/99999 -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"real_name":"Nobody"}'
+HTTP/1.1 404 Not Found
+Content-Length: 123
+Content-Type: application/json
+X-Request-Id: ddd83c06dc263bae2eae9fd9a9663a71
+X-Request-Id: ddd83c06dc263bae2eae9fd9a9663a71
+time_total: 0.034s
+{
+  "error": {
+    "code": "USER_NOT_FOUND",
+    "detail": "user not found",
+    "fields": null,
+    "request_id": "ddd83c06dc263bae2eae9fd9a9663a71"
+  }
+}
+
+[2026-10-22T02:55:14Z]
+$ curl -i -X PATCH http://18.222.255.231:8000/api/v1/users/5 -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"real_name":"Evaluation owner"}'
+HTTP/1.1 200 OK
+Content-Length: 160
+Content-Type: application/json
+X-Request-Id: a90d63c4c799d63d37314934382f6980
+X-Request-Id: a90d63c4c799d63d37314934382f6980
+time_total: 0.037s
+{
+  "display_name": "eval-owner",
+  "real_name": "Evaluation owner",
+  "id": 5,
+  "is_active": true,
+  "created_at": "2026-10-22T02:36:12.243212Z",
+  "roles": [
+    {
+      "id": 1,
+      "name": "user"
+    }
+  ]
+}
+
+# The rows these requests left, read back from Postgres
+
+[2026-10-22T02:55:14Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "select m.id, m.lost_item_id, l.status as lost_status, m.found_item_id, f.status as found_status from matches m join items l on l.id = m.lost_item_id join items f on f.id = m.found_item_id order by m.id;"
+ id | lost_item_id | lost_status | found_item_id | found_status 
+----+--------------+-------------+---------------+--------------
+  1 |            3 | matched     |             4 | matched
+  4 |           15 | matched     |            17 | matched
+(2 rows)
+

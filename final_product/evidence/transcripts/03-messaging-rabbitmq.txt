@@ -1,0 +1,442 @@
+Messaging: RabbitMQ 3.13.7 (container on the EC2 instance), AMQP 0-9-1, deployed commit f5cea42.
+Captured 2026-10-22 02:57 UTC. API calls go through the public gateway at http://18.222.255.231:8000/api/v1;
+rabbitmqctl and docker run on the instance. Tokens are <redacted>.
+
+The workflow: POST /items/{id}/images/{upload_id}/complete checks the upload is in R2,
+publishes {item_id, image_ref} to the durable queue jobs.image_processor as a persistent
+message (delivery_mode=2, publisher confirms), and returns 202. The image worker consumes
+with auto_ack=False and prefetch 1, and acks only after the photo is stored and the row is
+updated (app/image_worker.py, handle_message).
+
+# A. Topology. Every queue is durable
+
+[2026-10-22T02:57:53Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T broker rabbitmqctl -q list_queues name durable messages_ready messages_unacknowledged consumers
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	0	0	1
+events.logger	true	0	0	1
+events.notifier	true	0	0	1
+jobs.item_matcher	true	0	0	1
+
+[2026-10-22T02:57:55Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T broker rabbitmqctl -q list_bindings source_name destination_name routing_key | grep seekr.events
+seekr.events	events.logger	#
+seekr.events	events.notifier	match.confirmed
+seekr.events	events.notifier	match.potential_found
+
+# B. Interrupt the consumer: stop it, publish, read the depth, start it, read the depth again
+
+[2026-10-22T02:57:56Z]
+ubuntu@ec2$ docker compose --env-file .env.local stop image_worker
+ Container campus-seekr-image_worker-1  Stopping
+ Container campus-seekr-image_worker-1  Stopped
+
+[2026-10-22T02:58:06Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T broker rabbitmqctl -q list_queues name durable messages_ready messages_unacknowledged consumers
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	0	0	0
+events.logger	true	0	0	1
+events.notifier	true	0	0	1
+jobs.item_matcher	true	0	0	1
+
+[2026-10-22T02:58:07Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/16/images -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 201 Created
+Content-Length: 565
+Content-Type: application/json
+X-Request-Id: 0bfe2dda8afa9620dfcc8a7f71197f2c
+X-Request-Id: 0bfe2dda8afa9620dfcc8a7f71197f2c
+time_total: 0.037s
+upload_id: 782dfded-ad95-460d-b7b8-4773f77f76b8
+
+[2026-10-22T02:58:07Z]
+$ curl -i -X PUT --data-binary @bottle-photo.png 'https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/uploads/pending/782dfded-ad95-460d-b7b8-4773f77f76b8?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025807Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>'
+HTTP/1.1 200 OK
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 0
+ETag: "a09636a1b7c9b19b31d1fcbb0cf87340"
+time_total: 0.287s
+
+[2026-10-22T02:58:07Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/16/images/782dfded-ad95-460d-b7b8-4773f77f76b8/complete -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 202 Accepted
+Content-Length: 112
+Content-Type: application/json
+X-Request-Id: 7658095c10db8d04f82622ac9b5b5aba
+X-Request-Id: 7658095c10db8d04f82622ac9b5b5aba
+time_total: 0.161s
+{
+  "upload_id": "782dfded-ad95-460d-b7b8-4773f77f76b8",
+  "status": "processing",
+  "reject_reason": null,
+  "photo_url": null
+}
+
+[2026-10-22T02:58:07Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T broker rabbitmqctl -q list_queues name durable messages_ready messages_unacknowledged consumers
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	1	0	0
+events.logger	true	0	0	1
+events.notifier	true	0	0	1
+jobs.item_matcher	true	0	0	1
+
+(waiting 20 s with no consumer)
+
+[2026-10-22T02:58:28Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/16/images/782dfded-ad95-460d-b7b8-4773f77f76b8
+HTTP/1.1 200 OK
+Content-Length: 112
+Content-Type: application/json
+X-Request-Id: 1a4e6b6b6e6dcf7702c32c789cfcc6e5
+X-Request-Id: 1a4e6b6b6e6dcf7702c32c789cfcc6e5
+time_total: 0.033s
+{
+  "upload_id": "782dfded-ad95-460d-b7b8-4773f77f76b8",
+  "status": "processing",
+  "reject_reason": null,
+  "photo_url": null
+}
+
+[2026-10-22T02:58:28Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T broker rabbitmqctl -q list_queues name durable messages_ready messages_unacknowledged consumers
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	1	0	0
+events.logger	true	0	0	1
+events.notifier	true	0	0	1
+jobs.item_matcher	true	0	0	1
+
+[2026-10-22T02:58:29Z]
+ubuntu@ec2$ docker compose --env-file .env.local start image_worker
+ Container campus-seekr-db-1  Waiting
+ Container campus-seekr-storage-1  Waiting
+ Container campus-seekr-broker-1  Waiting
+ Container campus-seekr-broker-1  Healthy
+ Container campus-seekr-db-1  Healthy
+ Container campus-seekr-storage-1  Healthy
+ Container campus-seekr-image_worker-1  Starting
+ Container campus-seekr-image_worker-1  Started
+
+[2026-10-22T02:58:32Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/16/images/782dfded-ad95-460d-b7b8-4773f77f76b8
+HTTP/1.1 200 OK
+Content-Length: 524
+Content-Type: application/json
+X-Request-Id: 22740526dbe711ee991e94d3a61735ce
+X-Request-Id: 22740526dbe711ee991e94d3a61735ce
+time_total: 0.030s
+{
+  "upload_id": "782dfded-ad95-460d-b7b8-4773f77f76b8",
+  "status": "ready",
+  "reject_reason": null,
+  "photo_url": "https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/items/16/782dfded-ad95-460d-b7b8-4773f77f76b8/photo.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025832Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>"
+}
+
+[2026-10-22T02:58:33Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T broker rabbitmqctl -q list_queues name durable messages_ready messages_unacknowledged consumers
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	0	0	1
+events.logger	true	0	0	1
+events.notifier	true	0	0	1
+jobs.item_matcher	true	0	0	1
+
+[2026-10-22T02:58:33Z]
+ubuntu@ec2$ docker compose --env-file .env.local logs --no-color --timestamps --since 2m image_worker
+image_worker-1  | 2026-10-22T02:56:44.255789760Z INFO Stored items/15/a102d213-9631-4080-89a5-eee3120bd5b8/photo.jpg (image/png, 144564 bytes in)
+image_worker-1  | 2026-10-22T02:56:44.267649155Z INFO Published event image.processed: 2bb3e5c3-9c02-410e-ac90-d091f1f54d44
+image_worker-1  | 2026-10-22T02:56:46.067064391Z INFO Rejected upload 14b0633a-7c7a-4d83-bc6a-b6ec2509b7a5 for item 15: text/x-shellscript is not an allowed image type
+image_worker-1  | 2026-10-22T02:56:46.075944280Z INFO Published event image.processed: b8c02387-14ea-4961-8e5d-8e654f7dc0b1
+image_worker-1  | 2026-10-22T02:58:31.543456265Z INFO Waiting for jobs on jobs.image_processor
+image_worker-1  | 2026-10-22T02:58:32.086345154Z INFO Stored items/16/782dfded-ad95-460d-b7b8-4773f77f76b8/photo.jpg (image/png, 144564 bytes in)
+image_worker-1  | 2026-10-22T02:58:32.095956793Z INFO Published event image.processed: 420980cc-53c9-451a-90cc-7c1db49933c7
+
+# C. Kill the consumer halfway through a job (SIGKILL, no clean shutdown). The job is a 6000x4000 PNG, so the worker holds it unacknowledged for a few seconds. As soon as rabbitmqctl shows it unacked, the worker is killed
+
+[2026-10-22T02:58:34Z]
+ubuntu@ec2$ docker compose --env-file .env.local stop image_worker
+ Container campus-seekr-image_worker-1  Stopping
+ Container campus-seekr-image_worker-1  Stopped
+
+[2026-10-22T02:58:44Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/16/images -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 201 Created
+Content-Length: 565
+Content-Type: application/json
+X-Request-Id: c0bc47420c0c7422eaa11cf506841ab7
+X-Request-Id: c0bc47420c0c7422eaa11cf506841ab7
+time_total: 0.038s
+upload_id: a1c76d56-3090-469b-b408-98247031b23e
+
+[2026-10-22T02:58:45Z]
+$ curl -i -X PUT --data-binary @big-photo.png 'https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/uploads/pending/a1c76d56-3090-469b-b408-98247031b23e?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025845Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>'
+HTTP/1.1 200 OK
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 0
+ETag: "b5d98a69189b6f86bd06e7e8cda8c896"
+time_total: 0.340s
+
+[2026-10-22T02:58:45Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/16/images/a1c76d56-3090-469b-b408-98247031b23e/complete -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 202 Accepted
+Content-Length: 112
+Content-Type: application/json
+X-Request-Id: 180849524b7ad4e52c70f6ed49126f05
+X-Request-Id: 180849524b7ad4e52c70f6ed49126f05
+time_total: 0.211s
+{
+  "upload_id": "a1c76d56-3090-469b-b408-98247031b23e",
+  "status": "processing",
+  "reject_reason": null,
+  "photo_url": null
+}
+
+[2026-10-22T02:58:45Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T broker rabbitmqctl -q list_queues name durable messages_ready messages_unacknowledged consumers
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	1	0	0
+events.logger	true	0	0	1
+events.notifier	true	0	0	1
+jobs.item_matcher	true	0	0	1
+
+[2026-10-22T02:58:46Z]
+ubuntu@ec2$ (start the worker; poll the queue; kill -9 the worker when the job is unacked)
+ Container campus-seekr-db-1  Waiting
+ Container campus-seekr-storage-1  Waiting
+ Container campus-seekr-broker-1  Waiting
+ Container campus-seekr-broker-1  Healthy
+ Container campus-seekr-storage-1  Healthy
+ Container campus-seekr-db-1  Healthy
+ Container campus-seekr-image_worker-1  Starting
+ Container campus-seekr-image_worker-1  Started
+02:58:48.448  jobs.image_processor	1	0	0
+02:58:49.250  jobs.image_processor	0	1	1
+02:58:49.378  killed campus-seekr-image_worker-1 with SIGKILL
+after the kill:
+name	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	1	0	0
+image_worker: Exited (137) 2 seconds ago
+
+[2026-10-22T02:58:52Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/16/images/a1c76d56-3090-469b-b408-98247031b23e
+HTTP/1.1 200 OK
+Content-Length: 112
+Content-Type: application/json
+X-Request-Id: c2f25c5fbcc7c43cb0795c6e3defbe84
+X-Request-Id: c2f25c5fbcc7c43cb0795c6e3defbe84
+time_total: 0.030s
+{
+  "upload_id": "a1c76d56-3090-469b-b408-98247031b23e",
+  "status": "processing",
+  "reject_reason": null,
+  "photo_url": null
+}
+
+# Start a fresh consumer. RabbitMQ redelivers the unacked job and this worker finishes it
+
+[2026-10-22T02:58:52Z]
+ubuntu@ec2$ docker compose --env-file .env.local start image_worker
+ Container campus-seekr-storage-1  Waiting
+ Container campus-seekr-broker-1  Waiting
+ Container campus-seekr-db-1  Waiting
+ Container campus-seekr-broker-1  Healthy
+ Container campus-seekr-db-1  Healthy
+ Container campus-seekr-storage-1  Healthy
+ Container campus-seekr-image_worker-1  Starting
+ Container campus-seekr-image_worker-1  Started
+
+[2026-10-22T02:58:55Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/16/images/a1c76d56-3090-469b-b408-98247031b23e
+HTTP/1.1 200 OK
+Content-Length: 524
+Content-Type: application/json
+X-Request-Id: 8bf1f31a98f326d729c0020c45bb4145
+X-Request-Id: 8bf1f31a98f326d729c0020c45bb4145
+time_total: 0.030s
+{
+  "upload_id": "a1c76d56-3090-469b-b408-98247031b23e",
+  "status": "ready",
+  "reject_reason": null,
+  "photo_url": "https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/items/16/a1c76d56-3090-469b-b408-98247031b23e/photo.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025855Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>"
+}
+
+[2026-10-22T02:58:55Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T broker rabbitmqctl -q list_queues name durable messages_ready messages_unacknowledged consumers
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	0	0	1
+events.logger	true	0	0	1
+events.notifier	true	0	0	1
+jobs.item_matcher	true	0	0	1
+
+[2026-10-22T02:58:56Z]
+ubuntu@ec2$ docker compose --env-file .env.local logs --no-color --timestamps --since 3m image_worker
+image_worker-1  | 2026-10-22T02:56:02.287822496Z INFO Stored items/15/120037b7-1c02-4ef6-9e94-d9223578f766/photo.jpg (image/png, 144564 bytes in)
+image_worker-1  | 2026-10-22T02:56:02.299891255Z INFO Published event image.processed: 490b8ef9-b953-486a-9de2-7cde952feecb
+image_worker-1  | 2026-10-22T02:56:03.832970229Z INFO Rejected upload 576c395f-e11a-465e-970a-9061f624416e for item 15: text/x-shellscript is not an allowed image type
+image_worker-1  | 2026-10-22T02:56:03.841995944Z INFO Published event image.processed: f4219cec-ccdb-4bdd-b61e-09248d5650c8
+image_worker-1  | 2026-10-22T02:56:44.255789760Z INFO Stored items/15/a102d213-9631-4080-89a5-eee3120bd5b8/photo.jpg (image/png, 144564 bytes in)
+image_worker-1  | 2026-10-22T02:56:44.267649155Z INFO Published event image.processed: 2bb3e5c3-9c02-410e-ac90-d091f1f54d44
+image_worker-1  | 2026-10-22T02:56:46.067064391Z INFO Rejected upload 14b0633a-7c7a-4d83-bc6a-b6ec2509b7a5 for item 15: text/x-shellscript is not an allowed image type
+image_worker-1  | 2026-10-22T02:56:46.075944280Z INFO Published event image.processed: b8c02387-14ea-4961-8e5d-8e654f7dc0b1
+image_worker-1  | 2026-10-22T02:58:31.543456265Z INFO Waiting for jobs on jobs.image_processor
+image_worker-1  | 2026-10-22T02:58:32.086345154Z INFO Stored items/16/782dfded-ad95-460d-b7b8-4773f77f76b8/photo.jpg (image/png, 144564 bytes in)
+image_worker-1  | 2026-10-22T02:58:32.095956793Z INFO Published event image.processed: 420980cc-53c9-451a-90cc-7c1db49933c7
+image_worker-1  | 2026-10-22T02:58:48.586173380Z INFO Waiting for jobs on jobs.image_processor
+image_worker-1  | 2026-10-22T02:58:53.898295735Z INFO Waiting for jobs on jobs.image_processor
+image_worker-1  | 2026-10-22T02:58:54.751066737Z INFO Stored items/16/a1c76d56-3090-469b-b408-98247031b23e/photo.jpg (image/png, 781835 bytes in)
+image_worker-1  | 2026-10-22T02:58:54.760710628Z INFO Published event image.processed: 8d44fe55-b6e3-4858-b31f-ed2b46dc5b45
+
+# D. The other workflow on the broker: posting an item queues a matching job (201 for the post, the worker scores it out of band), and an admin can queue a fresh search (202)
+
+[2026-10-22T02:58:57Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -d '{"name":"Black umbrella","description":"Black compact umbrella with a curved wooden handle, lost near the library entrance","type":0,"location_id":1}'
+HTTP/1.1 201 Created
+Content-Length: 245
+Content-Type: application/json
+X-Request-Id: 6e4f4292158857327e7e91ea0b91899e
+X-Request-Id: 6e4f4292158857327e7e91ea0b91899e
+time_total: 0.060s
+{
+  "name": "Black umbrella",
+  "description": "Black compact umbrella with a curved wooden handle, lost near the library entrance",
+  "location_id": 1,
+  "id": 18,
+  "user_id": 5,
+  "type": 0,
+  "status": "open",
+  "created_at": "2026-10-22T02:58:57.101568Z",
+  "photo_url": null
+}
+
+[2026-10-22T02:59:00Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/18/potential-matches
+HTTP/1.1 200 OK
+Content-Length: 378
+Content-Type: application/json
+X-Request-Id: bf433ce0aa28d9719a7280f984c35f9e
+X-Request-Id: bf433ce0aa28d9719a7280f984c35f9e
+time_total: 0.039s
+[
+  {
+    "lost_item_id": 18,
+    "found_item_id": 11,
+    "score": 1.5,
+    "created_at": "2026-10-22T02:58:57.125437Z"
+  },
+  {
+    "lost_item_id": 18,
+    "found_item_id": 10,
+    "score": 1.25,
+    "created_at": "2026-10-22T02:58:57.125437Z"
+  },
+  {
+    "lost_item_id": 18,
+    "found_item_id": 2,
+    "score": 0.25,
+    "created_at": "2026-10-22T02:58:57.125437Z"
+  },
+  {
+    "lost_item_id": 18,
+    "found_item_id": 8,
+    "score": 0.25,
+    "created_at": "2026-10-22T02:58:57.125437Z"
+  }
+]
+
+[2026-10-22T02:59:00Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/18/match-search -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 202 Accepted
+Content-Length: 32
+Content-Type: application/json
+X-Request-Id: 0f9bf7c76d6fd59a26834042b8dc3ca6
+X-Request-Id: 0f9bf7c76d6fd59a26834042b8dc3ca6
+time_total: 0.047s
+{
+  "item_id": 18,
+  "status": "queued"
+}
+
+# Failures: not an admin, no such item, an item that is already matched
+
+[2026-10-22T02:59:00Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/18/match-search -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 403 Forbidden
+Content-Length: 126
+Content-Type: application/json
+X-Request-Id: d04e91ad0f21af182231babc73e9765c
+X-Request-Id: d04e91ad0f21af182231babc73e9765c
+time_total: 0.031s
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "detail": "requires one of: admin",
+    "fields": null,
+    "request_id": "d04e91ad0f21af182231babc73e9765c"
+  }
+}
+
+[2026-10-22T02:59:00Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/99999/match-search -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 404 Not Found
+Content-Length: 123
+Content-Type: application/json
+X-Request-Id: e39be8624a4dac17f80971a3f261b050
+X-Request-Id: e39be8624a4dac17f80971a3f261b050
+time_total: 0.037s
+{
+  "error": {
+    "code": "ITEM_NOT_FOUND",
+    "detail": "item not found",
+    "fields": null,
+    "request_id": "e39be8624a4dac17f80971a3f261b050"
+  }
+}
+
+[2026-10-22T02:59:00Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/15/match-search -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 409 Conflict
+Content-Length: 148
+Content-Type: application/json
+X-Request-Id: 33f673d96e4af296fd3b67e3fcf6fe9d
+X-Request-Id: 33f673d96e4af296fd3b67e3fcf6fe9d
+time_total: 0.033s
+{
+  "error": {
+    "code": "ITEM_NOT_OPEN",
+    "detail": "item 15 is matched and cannot be matched",
+    "fields": null,
+    "request_id": "33f673d96e4af296fd3b67e3fcf6fe9d"
+  }
+}
+
+[2026-10-22T02:59:00Z]
+ubuntu@ec2$ docker compose --env-file .env.local logs --no-color --timestamps --since 1m matching_worker
+matching_worker-1  | 2026-10-22T02:58:57.148082595Z INFO Published event match.potential_found: b7dbb416-b663-4c71-81ea-cf57b67c4f8a
+matching_worker-1  | 2026-10-22T02:58:57.157146958Z INFO Published event match.potential_found: a4fda166-77c8-460e-b47e-9c62a07ab93c
+matching_worker-1  | 2026-10-22T02:58:57.165748985Z INFO Published event match.potential_found: 945cbdc8-7a2f-47f6-b4b3-a9bb905de510
+matching_worker-1  | 2026-10-22T02:58:57.174686551Z INFO Published event match.potential_found: b316ab83-db8f-4e6e-b838-e31720af996d
+matching_worker-1  | 2026-10-22T02:58:57.175601118Z INFO Item 18: 4 suggestions, 4 new
+matching_worker-1  | 2026-10-22T02:59:00.296842976Z INFO Item 18: 4 suggestions, 0 new
+
+# E. Events fan out through the topic exchange seekr.events: the logger keeps every event, the notifier only match events
+
+[2026-10-22T02:59:00Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T logger tail -n 6 /app/logs/events.jsonl
+{"routing_key": "image.processed", "event": {"event_id": "8d44fe55-b6e3-4858-b31f-ed2b46dc5b45", "schema_version": 1, "timestamp": "2026-10-22T02:58:54.750976Z", "source": "image-worker", "event_type": "image.processed", "payload": {"item_id": 16, "upload_id": "a1c76d56-3090-469b-b408-98247031b23e", "status": "ready", "reject_reason": null}}}
+{"routing_key": "item.created", "event": {"event_id": "f860952d-bbb0-4f80-b050-ede25a11b64d", "schema_version": 1, "timestamp": "2026-10-22T02:58:57.107980Z", "source": "campus-seekr-api", "event_type": "item.created", "payload": {"item_id": 18}}}
+{"routing_key": "match.potential_found", "event": {"event_id": "b7dbb416-b663-4c71-81ea-cf57b67c4f8a", "schema_version": 1, "timestamp": "2026-10-22T02:58:57.138325Z", "source": "matching-worker", "event_type": "match.potential_found", "payload": {"lost_item_id": 18, "found_item_id": 11, "score": 1.5}}}
+{"routing_key": "match.potential_found", "event": {"event_id": "a4fda166-77c8-460e-b47e-9c62a07ab93c", "schema_version": 1, "timestamp": "2026-10-22T02:58:57.148805Z", "source": "matching-worker", "event_type": "match.potential_found", "payload": {"lost_item_id": 18, "found_item_id": 10, "score": 1.25}}}
+{"routing_key": "match.potential_found", "event": {"event_id": "945cbdc8-7a2f-47f6-b4b3-a9bb905de510", "schema_version": 1, "timestamp": "2026-10-22T02:58:57.157479Z", "source": "matching-worker", "event_type": "match.potential_found", "payload": {"lost_item_id": 18, "found_item_id": 2, "score": 0.25}}}
+{"routing_key": "match.potential_found", "event": {"event_id": "b316ab83-db8f-4e6e-b838-e31720af996d", "schema_version": 1, "timestamp": "2026-10-22T02:58:57.166457Z", "source": "matching-worker", "event_type": "match.potential_found", "payload": {"lost_item_id": 18, "found_item_id": 8, "score": 0.25}}}
+
+[2026-10-22T02:59:01Z]
+ubuntu@ec2$ docker compose --env-file .env.local logs --no-color --since 15m notifier | tail -n 3 | cut -c1-260
+notifier-1  | INFO Would notify for match.potential_found: {"event_id": "a4fda166-77c8-460e-b47e-9c62a07ab93c", "schema_version": 1, "timestamp": "2026-10-22T02:58:57.148805Z", "source": "matching-worker", "event_type": "match.potential_found", "payload": {"lo
+notifier-1  | INFO Would notify for match.potential_found: {"event_id": "945cbdc8-7a2f-47f6-b4b3-a9bb905de510", "schema_version": 1, "timestamp": "2026-10-22T02:58:57.157479Z", "source": "matching-worker", "event_type": "match.potential_found", "payload": {"lo
+notifier-1  | INFO Would notify for match.potential_found: {"event_id": "b316ab83-db8f-4e6e-b838-e31720af996d", "schema_version": 1, "timestamp": "2026-10-22T02:58:57.166457Z", "source": "matching-worker", "event_type": "match.potential_found", "payload": {"lo
+
+[2026-10-22T02:59:01Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T broker rabbitmqctl -q list_queues name durable messages_ready messages_unacknowledged consumers
+name	durable	messages_ready	messages_unacknowledged	consumers
+jobs.image_processor	true	0	0	1
+events.logger	true	0	0	1
+events.notifier	true	0	0	1
+jobs.item_matcher	true	0	0	1

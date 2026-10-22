@@ -1,0 +1,250 @@
+Metrics pipeline: the API exposes Prometheus text at /metrics/, Prometheus v3.2.1 scrapes it every
+15 s, Grafana 11.5.2 reads Prometheus. Deployed commit f5cea42. Captured 2026-10-22 03:05 UTC.
+The full raw scrape and the target status are in ../metrics-scrape.txt.
+
+# 1. The exposition endpoint. The trailing slash matters: the exporter is a mounted ASGI app
+
+[2026-10-22T03:05:38Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/metrics/
+HTTP/1.1 200 OK
+Content-Type: text/plain; version=0.0.4; charset=utf-8
+X-Request-Id: eb3383b5d783a177643c4610ca833de6
+X-Request-Id: eb3383b5d783a177643c4610ca833de6
+time_total: 0.029s
+
+[2026-10-22T03:05:38Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/metrics
+HTTP/1.1 307 Temporary Redirect
+Content-Length: 0
+Location: http://18.222.255.231/api/v1/metrics/
+X-Request-Id: f37a248312fb88cc4f171c3305915e43
+X-Request-Id: f37a248312fb88cc4f171c3305915e43
+time_total: 0.026s
+
+# 2. The route label is the matched template, read after routing (app/api.py, attach_request_id). Two different files are one series
+
+[2026-10-22T03:05:39Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/files/101 -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 404 Not Found
+Content-Length: 123
+Content-Type: application/json
+X-Request-Id: bb01aa120a09ebf3d129293217621381
+X-Request-Id: bb01aa120a09ebf3d129293217621381
+time_total: 0.033s
+
+[2026-10-22T03:05:39Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/files/102 -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 404 Not Found
+Content-Length: 123
+Content-Type: application/json
+X-Request-Id: 741f75e6557883fb2026a1528562ffdc
+X-Request-Id: 741f75e6557883fb2026a1528562ffdc
+time_total: 0.033s
+$ curl -s http://18.222.255.231:8000/api/v1/metrics/ | grep 'route="/files/{file_id}"'
+seekr_requests_total{method="GET",route="/files/{file_id}",status="200"} 2.0
+seekr_requests_total{method="GET",route="/files/{file_id}",status="403"} 2.0
+seekr_requests_total{method="GET",route="/files/{file_id}",status="404"} 6.0
+seekr_requests_total{method="DELETE",route="/files/{file_id}",status="204"} 2.0
+seekr_requests_created{method="GET",route="/files/{file_id}",status="200"} 1.792637765313277e+09
+seekr_requests_created{method="GET",route="/files/{file_id}",status="403"} 1.792637765813583e+09
+seekr_requests_created{method="GET",route="/files/{file_id}",status="404"} 1.7926377671892323e+09
+seekr_requests_created{method="DELETE",route="/files/{file_id}",status="204"} 1.7926377697748003e+09
+
+# 3. Paths no route matches share one series, so scanners can't create new ones
+
+[2026-10-22T03:05:39Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/no/such/path/1
+HTTP/1.1 404 Not Found
+Content-Length: 132
+Content-Type: application/json
+X-Request-Id: bb7148592096ed68a7df3c562c141b68
+X-Request-Id: bb7148592096ed68a7df3c562c141b68
+time_total: 0.027s
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "detail": "that endpoint does not exist",
+    "fields": null,
+    "request_id": "bb7148592096ed68a7df3c562c141b68"
+  }
+}
+
+[2026-10-22T03:05:39Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/wp-login.php
+HTTP/1.1 404 Not Found
+Content-Length: 132
+Content-Type: application/json
+X-Request-Id: c5879463e34791f36069fd482c8c4ea9
+X-Request-Id: c5879463e34791f36069fd482c8c4ea9
+time_total: 0.026s
+$ curl -s http://18.222.255.231:8000/api/v1/metrics/ | grep 'route="__unmatched__"'
+seekr_requests_total{method="GET",route="__unmatched__",status="200"} 62.0
+seekr_requests_total{method="GET",route="__unmatched__",status="307"} 1.0
+seekr_requests_total{method="GET",route="__unmatched__",status="404"} 2.0
+seekr_requests_created{method="GET",route="__unmatched__",status="200"} 1.7926374934759257e+09
+seekr_requests_created{method="GET",route="__unmatched__",status="307"} 1.7926383390361876e+09
+seekr_requests_created{method="GET",route="__unmatched__",status="404"} 1.7926383392459688e+09
+$ curl -s http://18.222.255.231:8000/api/v1/metrics/ | grep -c '^seekr_requests_total'   # every series in the counter
+76
+
+# 4. The domain metrics: items posted (lost/found) and matches confirmed
+$ curl -s http://18.222.255.231:8000/api/v1/metrics/ | grep -E '^seekr_(items_posted|matches_confirmed)_total'
+seekr_items_posted_total{type="lost"} 153.0
+seekr_items_posted_total{type="found"} 153.0
+seekr_matches_confirmed_total 2.0
+
+# 5. Prometheus has the target up and answers queries; a malformed query is refused
+
+[2026-10-22T03:05:39Z]
+$ curl -i -X GET 'http://18.222.255.231:9090/api/v1/query?query=sum%20by%20(status)%20(seekr_requests_total)'
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 700
+time_total: 0.028s
+{
+  "status": "success",
+  "data": {
+    "resultType": "vector",
+    "result": [
+      {
+        "metric": {
+          "status": "200"
+        },
+        "value": [
+          1792638339.463,
+          "2692"
+        ]
+      },
+      {
+        "metric": {
+          "status": "201"
+        },
+        "value": [
+          1792638339.463,
+          "419"
+        ]
+      },
+      {
+        "metric": {
+          "status": "202"
+        },
+        "value": [
+          1792638339.463,
+          "108"
+        ]
+      },
+      {
+        "metric": {
+          "status": "422"
+        },
+        "value": [
+          1792638339.463,
+          "7"
+        ]
+      },
+      {
+        "metric": {
+          "status": "409"
+        },
+        "value": [
+          1792638339.463,
+          "12"
+        ]
+      },
+      {
+        "metric": {
+          "status": "401"
+        },
+        "value": [
+          1792638339.463,
+          "16"
+        ]
+      },
+      {
+        "metric": {
+          "status": "403"
+        },
+        "value": [
+          1792638339.463,
+          "11"
+        ]
+      },
+      {
+        "metric": {
+          "status": "404"
+        },
+        "value": [
+          1792638339.463,
+          "15"
+        ]
+      },
+      {
+        "metric": {
+          "status": "204"
+        },
+        "value": [
+          1792638339.463,
+          "8"
+        ]
+      },
+      {
+        "metric": {
+          "status": "400"
+        },
+        "value": [
+          1792638339.463,
+          "2"
+        ]
+      },
+      {
+        "metric": {
+          "status": "413"
+        },
+        "value": [
+          1792638339.463,
+          "4"
+        ]
+      }
+    ]
+  }
+}
+
+[2026-10-22T03:05:39Z]
+$ curl -i -X GET 'http://18.222.255.231:9090/api/v1/query?query=sum%20by%20(status'
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Content-Length: 125
+time_total: 0.027s
+{
+  "status": "error",
+  "errorType": "bad_data",
+  "error": "invalid parameter \"query\": 1:15: parse error: unclosed left parenthesis"
+}
+
+# 6. Grafana loads the provisioned dashboard; the API needs a login
+
+[2026-10-22T03:05:39Z]
+$ curl -i -X GET http://18.222.255.231:3000/api/health
+HTTP/1.1 200 OK
+Content-Length: 101
+Content-Type: application/json; charset=UTF-8
+time_total: 0.048s
+{
+  "database": "ok",
+  "version": "11.5.2",
+  "commit": "598e0338d5374d6bc404b02a58094132c5eeceb8"
+}
+
+[2026-10-22T03:05:39Z]
+$ curl -i -X GET 'http://18.222.255.231:3000/api/search?query=Seekr'
+HTTP/1.1 401 Unauthorized
+Content-Length: 102
+Content-Type: application/json; charset=UTF-8
+time_total: 0.026s
+{
+  "extra": null,
+  "message": "Unauthorized",
+  "messageId": "auth.unauthorized",
+  "statusCode": 401,
+  "traceID": ""
+}

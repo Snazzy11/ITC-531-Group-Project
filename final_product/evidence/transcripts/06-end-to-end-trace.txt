@@ -1,0 +1,138 @@
+End-to-end trace of one request across all four services, deployed commit f5cea42.
+Captured 2026-10-22 02:59 UTC against http://18.222.255.231:8000/api/v1.
+
+The request: POST /items/18/images/{upload_id}/complete, after the owner of lost item
+18 (the black umbrella) has PUT a photo to R2 with a presigned URL.
+  HTTP in       nginx gateway -> FastAPI (request id shared by both logs)
+  object store  API: HEAD the pending upload in R2 (must exist, else 409)
+  message       API: publish {item_id, image_ref} to jobs.image_processor, confirmed
+  row written   API: images.status awaiting_upload -> processing; 202 returned
+  metric        seekr_requests_total{route="/items/{item_id}/images/{upload_id}/complete",status="202"} +1
+  consumer      image worker: read R2, check, re-encode, write photo.jpg to R2,
+                row -> ready, delete the pending object, ack, emit image.processed
+  event         the logger appends image.processed to events.jsonl
+
+# 0. Before: the counter for this route, and the setup (an upload link, then the PUT straight to R2)
+$ curl -s http://18.222.255.231:8000/api/v1/metrics/ | grep 'route="/items/{item_id}/images/{upload_id}/complete",status="202"'
+seekr_requests_total{method="POST",route="/items/{item_id}/images/{upload_id}/complete",status="202"} 6.0
+
+[2026-10-22T02:59:47Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/18/images -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 201 Created
+Content-Length: 565
+Content-Type: application/json
+X-Request-Id: 5e415ee42fb0c741a823321b1e25b5ee
+X-Request-Id: 5e415ee42fb0c741a823321b1e25b5ee
+time_total: 0.038s
+{
+  "upload_id": "50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1",
+  "status": "awaiting_upload",
+  "reject_reason": null,
+  "photo_url": null,
+  "upload_url": "https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/uploads/pending/50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025947Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>",
+  "expires_in": 600
+}
+
+[2026-10-22T02:59:47Z]
+$ curl -i -X PUT --data-binary @bottle-photo.png 'https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/uploads/pending/50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T025947Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>'
+HTTP/1.1 200 OK
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 0
+ETag: "a09636a1b7c9b19b31d1fcbb0cf87340"
+time_total: 0.339s
+
+[2026-10-22T02:59:47Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "select item_id, upload_id, status, photo_key, created_at, processed_at from images where upload_id = '50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1';"
+ item_id |              upload_id               |     status      | photo_key |          created_at          | processed_at 
+---------+--------------------------------------+-----------------+-----------+------------------------------+--------------
+      18 | 50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1 | awaiting_upload |           | 2026-10-22 02:59:47.59524+00 | 
+(1 row)
+
+
+# 1. HTTP in: the traced request
+
+[2026-10-22T02:59:48Z]
+$ curl -i -X POST http://18.222.255.231:8000/api/v1/items/18/images/50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1/complete -H 'Authorization: Bearer <redacted>'
+HTTP/1.1 202 Accepted
+Content-Length: 112
+Content-Type: application/json
+X-Request-Id: 52eceaaee8ab874cc0a93a31aa0393fb
+X-Request-Id: 52eceaaee8ab874cc0a93a31aa0393fb
+time_total: 0.117s
+{
+  "upload_id": "50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1",
+  "status": "processing",
+  "reject_reason": null,
+  "photo_url": null
+}
+
+# 2. The gateway's access log line for it (nginx, matched by upload id; the request id is the second field)
+
+[2026-10-22T02:59:52Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T gateway grep -F '50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1/complete' /var/log/nginx/api.access.log
+<client-ip> 52eceaaee8ab874cc0a93a31aa0393fb "POST /api/v1/items/18/images/50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1/complete HTTP/1.1" 202 upstream=172.18.0.7:8000 rt=0.089 urt=0.089
+
+# 3. The API's log: the access line and the publish to jobs.image_processor
+
+[2026-10-22T02:59:52Z]
+ubuntu@ec2$ docker compose --env-file .env.local logs --no-color --timestamps --since 2m app | grep -E '50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1/complete|Published image job for item 18'
+app-1  | 2026-10-22T02:59:48.518945834Z INFO:lostfound:Published image job for item 18
+app-1  | 2026-10-22T02:59:48.524593543Z INFO:     172.18.0.10:43376 - "POST /api/v1/items/18/images/50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1/complete HTTP/1.1" 202 Accepted
+
+# 4. The consumer: the image worker took the job, stored the photo and published image.processed
+
+[2026-10-22T02:59:53Z]
+ubuntu@ec2$ docker compose --env-file .env.local logs --no-color --timestamps --since 2m image_worker | grep -E 'items/18/50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1|image.processed' | tail -n 2
+image_worker-1  | 2026-10-22T02:59:48.976570083Z INFO Stored items/18/50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1/photo.jpg (image/png, 144564 bytes in)
+image_worker-1  | 2026-10-22T02:59:48.985890488Z INFO Published event image.processed: 24b44de1-f57b-4c5d-a3ad-51a461de3c53
+
+# 5. The object stored in R2 by the worker, and the pending upload removed
+
+[2026-10-22T02:59:53Z]
+ubuntu@ec2$ docker compose exec app python -   # head the stored photo and the pending key
+bucket       : deployed-project-bucket
+photo key    : items/18/50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1/photo.jpg
+size         : 22118 bytes, image/jpeg
+last modified: 2026-10-22T02:59:48+00:00
+metadata     : {'upload-id': '50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1'}
+pending key still there? False
+
+# 6. The row: processing was written by the API, ready by the worker
+
+[2026-10-22T02:59:54Z]
+ubuntu@ec2$ docker compose exec db psql -U seekr -d seekr -c "select item_id, upload_id, status, photo_key, content_type, size_bytes, created_at, processed_at from images where upload_id = '50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1';"
+ item_id |              upload_id               | status |                        photo_key                        | content_type | size_bytes |          created_at          |         processed_at          
+---------+--------------------------------------+--------+---------------------------------------------------------+--------------+------------+------------------------------+-------------------------------
+      18 | 50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1 | ready  | items/18/50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1/photo.jpg | image/png    |     144564 | 2026-10-22 02:59:47.59524+00 | 2026-10-22 02:59:48.847322+00
+(1 row)
+
+
+# 7. The metric incremented (scraped from the API, then the same series as Prometheus stored it)
+$ curl -s http://18.222.255.231:8000/api/v1/metrics/ | grep 'route="/items/{item_id}/images/{upload_id}/complete",status="202"'
+seekr_requests_total{method="POST",route="/items/{item_id}/images/{upload_id}/complete",status="202"} 7.0
+
+[2026-10-22T03:00:11Z]
+$ curl -s http://18.222.255.231:9090/api/v1/query --data-urlencode 'query=seekr_requests_total{route="/items/{item_id}/images/{upload_id}/complete"}'
+{"metric":{"__name__":"seekr_requests_total","instance":"app:8000","job":"seekr-app","method":"POST","route":"/items/{item_id}/images/{upload_id}/complete","status":"202"},"value":[1792638011.095,"7"]}
+{"metric":{"__name__":"seekr_requests_total","instance":"app:8000","job":"seekr-app","method":"POST","route":"/items/{item_id}/images/{upload_id}/complete","status":"409"},"value":[1792638011.095,"2"]}
+
+# 8. The consumer's completion, as the API and the event log see it
+
+[2026-10-22T03:00:11Z]
+$ curl -i -X GET http://18.222.255.231:8000/api/v1/items/18/images/50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1
+HTTP/1.1 200 OK
+Content-Length: 524
+Content-Type: application/json
+X-Request-Id: 667ec916098de410d166a137e81dcab0
+X-Request-Id: 667ec916098de410d166a137e81dcab0
+time_total: 0.035s
+{
+  "upload_id": "50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1",
+  "status": "ready",
+  "reject_reason": null,
+  "photo_url": "https://09bef99804e67cbead1d778a8b4204f6.r2.cloudflarestorage.com/deployed-project-bucket/items/18/50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1/photo.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<redacted>&X-Amz-Date=20261022T030011Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=<redacted>"
+}
+
+[2026-10-22T03:00:11Z]
+ubuntu@ec2$ docker compose --env-file .env.local exec -T logger grep -F '50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1' /app/logs/events.jsonl
+{"routing_key": "image.processed", "event": {"event_id": "24b44de1-f57b-4c5d-a3ad-51a461de3c53", "schema_version": 1, "timestamp": "2026-10-22T02:59:48.976477Z", "source": "image-worker", "event_type": "image.processed", "payload": {"item_id": 18, "upload_id": "50dde9dc-a6b3-44dc-9dad-5efab6f7a4d1", "status": "ready", "reject_reason": null}}}

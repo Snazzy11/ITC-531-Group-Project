@@ -296,28 +296,25 @@ API, workers, logger and notifier with `docker compose up --wait`, and runs
 always torn down at the end.
 
 # Deploying
-CI builds the image but doesn't push or deploy it; the comment on `push: false` in `.github/workflows/ci.yml` says
-why. We deploy to AWS (ECS behind API Gateway) by hand with our adapter, `adapters/aws.sh`.
-`milestones/milestone6/README.md` has a full run with its output.
+CI builds and tests but doesn't push (see `push: false` in `.github/workflows/ci.yml`). We deploy with
+`adapters/aws.sh`. `DEPLOY_TARGET=ec2` runs the whole stack on one EC2 instance with R2 storage (final product).
+`DEPLOY_TARGET=ecs` is the Milestone 6 ECS deploy, documented in `milestones/milestone6/README.md`.
 
-1. Copy `adapters/aws.env.example` to `adapters/aws.env` and fill it in. The app's own settings (database, JWT secret,
-   broker, bucket) go in the ECS task definition, not in this file. The example lists them all.
-2. Build the image, tagged with the full commit SHA:
+1. On the instance: install Docker, clone the repo, and write `.env.local`. For R2:
+   - `S3_ENDPOINT_URL=https://<account id>.r2.cloudflarestorage.com`, with no bucket path
+   - `S3_PUBLIC_ENDPOINT_URL` empty
+   - `AWS_DEFAULT_REGION=auto`
+2. Locally: copy `adapters/aws.env.example` to `adapters/aws.env` and fill it in.
+3. Deploy. It prints the URL last:
    ```sh
-   set -a; source adapters/aws.env; set +a
-   docker build --platform linux/amd64 -t "$IMAGE_REF" .
-   ```
-3. Deploy. `adapter_deploy` pushes the image to ECR if it isn't there yet, rolls the ECS service onto it, checks
-   `/health`, and prints the service URL on its last line:
-   ```sh
-   source adapters/aws.sh
+   set -a; source adapters/aws.env; set +a; source adapters/aws.sh
    adapter_deploy
    ```
-4. Audit, and tear down when you're done. `cloud-audit.sh` and `cloud-down.sh` come from the course's Module 7
-   folder; copy them into `scripts/` first.
+4. Monitoring: Grafana at `http://<EC2_HOST>:3000`, Prometheus at `:9090`.
+5. Tear down with the course's Module 7 scripts, copied into `scripts/` (`ADAPTER_DRY_RUN=1` previews the teardown):
    ```sh
-   bash scripts/cloud-audit.sh aws    # what exists
-   bash scripts/cloud-down.sh aws     # destroy it
+   bash scripts/cloud-audit.sh aws
+   bash scripts/cloud-down.sh aws
    bash scripts/cloud-audit.sh aws    # should print CLEAN
    ```
 
@@ -353,6 +350,13 @@ After rebuilding the stack, every request through `localhost:8000` returned 503 
 The API refused to start with a "no credentials" error from boto3. The S3 settings in `.env.local.example` used names the code never reads (`S3_ENDPOINT`, `S3_REGION`), so the real keys were never set and boto3 would have talked to Amazon instead of the local store anyway. The fix was renaming them to what `app/ports/storage.py` reads (`S3_ENDPOINT_URL`, `AWS_DEFAULT_REGION`, and so on) and filling in the keys.
 
 CI failed starting the stack with `container campus-seekr-notifier-1 has no healthcheck configured`. The workers turn off the image's health check (it calls the API, which they don't run), and the older Docker Compose on GitHub's runners rejects `--wait` for such containers, while newer versions just wait for them to be running. The fix was waiting only for the gateway and API, starting the workers separately, and having `scripts/smoke_test.sh` check that none of them exited.
+
+## Failure modes in the final deployment
+Objects went to the wrong R2 keys because `S3_ENDPOINT_URL` ended in a bucket path, and boto3 keeps that path.
+Startup and `/health` still passed. The fix was the bare endpoint, `S3_PUBLIC_ENDPOINT_URL` empty and region `auto`.
+
+The first `adapter_deploy` failed with `has no healthcheck configured`, the same Compose `--wait` problem as in CI.
+The adapter now waits only for services that have healthchecks.
 
 # Design docs
 - `docs/Architecture.drawio.html` - the services, the store, and the presigned path
