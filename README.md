@@ -425,9 +425,10 @@ We decided not to pursue features that could benefit this application such as: s
 
 ## No update for matches
 Matches have create (`POST /matches`), read (`GET /matches`, `GET /matches/{id}`, `GET /items/{id}/matches`) and
-delete (`DELETE /matches/{id}`), and no update, on purpose. We considered `PATCH /matches/{id}` and decided against
-it. A match has no field worth editing on its own: it only pairs a lost item with a found one. Changing which items
-it pairs is not an edit. The old pair has to go back to `open` (which also re-runs matching for both), and the new
-pair has to pass every check a new match does: one lost and one found item, both `open`, not already matched. That is
-exactly `DELETE` followed by `POST`, so a `PATCH` would only duplicate those two routes with more ways to get it wrong.
-For the final product's "full CRUD" requirement, we ask that this deliberate decision count as the update for matches.
+delete (`DELETE /matches/{id}`), but not an update. We considered adding `PATCH /matches/{id}` but decided against
+it. The reason is a match really just should not be edited, since the point of a match is
+to pair a single lost item with a found one. Changing the item it is paired to isnt really an edit, but more like creating
+a new match. The old pair has to go back to `open` (which also re-runs matching system), and the new
+pair would essentially go through the entire match process again. That is
+exactly the same as just using `DELETE` then `POST`, so a `PATCH` plainly uneccessary and possibly straight up wrong.
+For the final product's "full CRUD" requirement, we instead added an update to users.
