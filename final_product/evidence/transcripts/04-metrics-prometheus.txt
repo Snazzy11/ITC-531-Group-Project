@@ -1,6 +1,6 @@
 Metrics pipeline: the API exposes Prometheus text at /metrics/, Prometheus v3.2.1 scrapes it every
 15 s, Grafana 11.5.2 reads Prometheus. Deployed commit f5cea42. Captured 2026-10-22 03:05 UTC.
-The full raw scrape is in ../metrics-scrape.txt; the target status in ../prometheus-targets.txt.
+The full raw scrape and the target status are in ../metrics-scrape.txt.
 
 # 1. The exposition endpoint. The trailing slash matters: the exporter is a mounted ASGI app
 

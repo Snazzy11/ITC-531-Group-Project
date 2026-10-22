@@ -15,7 +15,8 @@ src=final_product
 missing=0
 for file in README.md ARCHITECTURE.md EVALUATION.md sources.md \
     evidence/walkthrough.md evidence/metrics-scrape.txt evidence/dashboard-panel.png \
-    evidence/ci-and-deploy.md evidence/transcripts/01-relational-postgres.txt; do
+    evidence/ci-and-deploy.md evidence/transcripts/01-relational-postgres.txt \
+    teardown/residual-risk.md; do
   if [ ! -s "$src/$file" ]; then
     echo "MISSING: $src/$file" >&2
     missing=1

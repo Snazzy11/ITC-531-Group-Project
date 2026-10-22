@@ -206,3 +206,48 @@ seekr_requests_created{method="POST",route="/items/{item_id}/match-search",statu
 seekr_requests_created{method="POST",route="/items/{item_id}/match-search",status="403"} 1.7926379403547041e+09
 seekr_requests_created{method="POST",route="/items/{item_id}/match-search",status="404"} 1.7926379404223762e+09
 seekr_requests_created{method="POST",route="/items/{item_id}/match-search",status="409"} 1.7926379404911797e+09
+
+==============================================================================================
+Prometheus target status for the deployed stack, 2026-10-22 03:04:42 UTC
+$ curl -s http://18.222.255.231:9090/api/v1/targets | jq '.data.activeTargets[] | {job, scrapeUrl, health, lastScrape, lastScrapeDuration, lastError}'
+{
+  "job": "seekr-app",
+  "scrapeUrl": "http://app:8000/metrics/",
+  "health": "up",
+  "lastScrape": "2026-10-22T03:04:33.473582828Z",
+  "lastScrapeDuration": 0.004736808,
+  "lastError": ""
+}
+
+$ curl -s http://18.222.255.231:9090/api/v1/query --data-urlencode 'query=sum by (route) (increase(seekr_requests_total[30m]))'
+2342	/items
+353	/health
+322	/auth/login
+120	__unmatched__
+108	/items/{item_id}/images/{upload_id}/complete
+108	/items/{item_id}/images
+23	/items/{item_id}/images/{upload_id}
+7	/users
+5	/files
+5	/files/{file_id}
+3	/auth/me
+3	/items/{item_id}
+1	/files/{file_id}/content
+1	/files/batch
+0	/locations
+0	/locations/{location_id}
+0	/locations/{location_id}/restore
+0	/locations/{location_id}/hard
+0	/items/{item_id}/status
+0	/items/{item_id}/hard
+0	/matches
+0	/matches/{match_id}
+0	/items/{item_id}/matches
+0	/users/{user_id}
+0	/items/{item_id}/potential-matches
+0	/items/{item_id}/match-search
+
+Domain metrics, as Prometheus stored them:
+seekr_items_posted_total{lost} = 153
+seekr_items_posted_total{found} = 153
+seekr_matches_confirmed_total{} = 2
