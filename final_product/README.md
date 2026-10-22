@@ -30,4 +30,6 @@ the update is DELETE then POST (`01`, part E). `PATCH /users/{id}` was added to 
 
 ## Who wrote which part
 
-TODO(team)
+Doug created the video and was the primary person running tests on the code and writing docs
+Devon did the p50, p95, and p99 testing as well as did most of the AWS work originally, and handled those parts of the documentation
+Parker mostly wrote code for the matcher, logger, authentication, and other parts of the app
