@@ -461,6 +461,14 @@ def get_user(db: Session, user_id: int) -> User | None:
     return db.query(models.User).filter(models.User.id == user_id).first()
 
 
+def update_user(db: Session, user: User, changes: dict) -> User:
+    for field, value in changes.items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def list_users(db: Session, limit: int = 100, offset: int = 0) -> list[type[User]]:
     query = db.query(models.User)
     return query.order_by(models.User.id).limit(limit).offset(offset).all()
